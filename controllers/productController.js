@@ -377,12 +377,12 @@ exports.getSearch = (req, res) => {
             (
                 SELECT
                     p.id,
-                    p.name COLLATE utf8mb4_unicode_ci AS name,
-                    p.slug COLLATE utf8mb4_unicode_ci AS slug,
-                    p.description COLLATE utf8mb4_unicode_ci AS description,
+                    p.name  AS name,
+                    p.slug  AS slug,
+                    p.description  AS description,
                     'product' AS type,
-                    c.name COLLATE utf8mb4_unicode_ci AS category_name,
-                    c.slug COLLATE utf8mb4_unicode_ci AS category_slug,
+                    c.name  AS category_name,
+                    c.slug  AS category_slug,
                     GROUP_CONCAT(DISTINCT CONCAT(i.id, ':', i.url) SEPARATOR ';') AS images
                 FROM
                     products p
@@ -399,9 +399,9 @@ exports.getSearch = (req, res) => {
             (
                 SELECT
                     c.id,
-                    c.name COLLATE utf8mb4_unicode_ci AS name,
-                    c.slug COLLATE utf8mb4_unicode_ci AS slug,
-                    c.description COLLATE utf8mb4_unicode_ci AS description,
+                    c.name  AS name,
+                    c.slug  AS slug,
+                    c.description  AS description,
                     'category' AS type,
                     NULL AS category_name,
                     NULL AS category_slug,
