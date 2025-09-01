@@ -43,7 +43,7 @@ const generateSlug = (name) => {
 
 const getImageUrl = (imageName) => {
     const port = process.env.PORT || 3000; // Use environment variable or default port
-    return `https://naaz-aquarium-skdm.onrender.com/uploads/category_images/${imageName}`;
+    return `http://localhost:${port}/uploads/category_images/${imageName}`;
 };
 
 
