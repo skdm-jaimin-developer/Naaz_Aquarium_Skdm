@@ -372,7 +372,7 @@ exports.getAllOrders = (req, res) => {
                     DISTINCT CONCAT(
                         p.id, '|', p.name, '|', p.description, '|', p.category_id, '|', p.no_of_reviews, '|', p.slug, '|',
                         (SELECT GROUP_CONCAT(CONCAT(id, ':', url) SEPARATOR ',') FROM images WHERE product_id = p.id), '|',
-                        (SELECT CONCAT(s.id, ':', s.name, ':', s.price, ':', s.discount_price, ':', s.stock) FROM sizes s JOIN order_products op ON s.id = op.size_id WHERE op.product_id = p.id AND op.order_id = o.id), '|',
+                        (SELECT CONCAT(s.id, ':', s.name, ':', s.price, ':', s.discount_price, ':', s.stock) FROM sizes s WHERE s.id = op.size_id),
                         c.name, '|', c.slug, '|', c.description, '|', op.quantity
                     ) SEPARATOR ';'
                 ) AS products
