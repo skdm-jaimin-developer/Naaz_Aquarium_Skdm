@@ -6,12 +6,12 @@ const path = require('path');
 
 const getInvoiceUrl = (invoiceName) => {
     const port = process.env.PORT || 3000;
-    return `http://localhost:${port}/invoices/${invoiceName}`;
+    return `https://naaz-aquarium-skdm.onrender.com/invoices/${invoiceName}`;
 };
 
 const getImageUrl = (imageName) => {
     const port = process.env.PORT || 3000;
-    return `http://localhost:${port}/uploads/product_images/${imageName}`;
+    return `https://naaz-aquarium-skdm.onrender.com/uploads/product_images/${imageName}`;
 };
 
 // Helper function to format order data for consistent API responses
