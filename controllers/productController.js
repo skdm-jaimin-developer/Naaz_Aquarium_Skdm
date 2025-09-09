@@ -521,8 +521,10 @@ exports.getSearch = (req, res) => {
             });
         });
     } else {
+        console.log(sql)
         // Execute the single query for the "no query" case.
         db.query(sql, (err, results) => {
+            console.log(err,results,"Failed to get default results")
             if (err) {
                 console.error('Failed to get default results:', err);
                 return res.status(500).json({ success: false, message: 'Failed to get default results.', error: err.message });
