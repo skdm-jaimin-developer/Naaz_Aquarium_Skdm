@@ -133,9 +133,15 @@ exports.createOrder = (req, res) => {
         payment_mode: paymentMode,
     };
 
-    // Begin a database transaction to ensure atomicity
-    db.beginTransaction(err => {
+     db.getConnection((err, connection) => {
         if (err) {
+            console.error('Error getting connection for transaction: ' + err.stack);
+            return;
+        }
+    // Begin a database transaction to ensure atomicity
+    connection.beginTransaction(err => {
+        if (err) {
+            connection.release();
             return res.status(500).json({
                 success: false,
                 message: 'Failed to start transaction.',
@@ -145,9 +151,10 @@ exports.createOrder = (req, res) => {
 
         // 1. Insert the new order into the `orders` table
         const insertOrderSql = 'INSERT INTO orders SET ?';
-        db.query(insertOrderSql, orderData, (err, result) => {
+        connection.query(insertOrderSql, orderData, (err, result) => {
             if (err) {
-                return db.rollback(() => {
+                connection.release();
+                return connection.rollback(() => {
                     res.status(500).json({
                         success: false,
                         message: 'Failed to create order.',
@@ -162,9 +169,10 @@ exports.createOrder = (req, res) => {
             const insertOrderProductsSql = 'INSERT INTO order_products (order_id, product_id, size_id, quantity) VALUES ?';
             const orderProductsData = products.map(p => [orderId, p.productId, p.sizeId, p.quantity]);
 
-            db.query(insertOrderProductsSql, [orderProductsData], (err) => {
+            connection.query(insertOrderProductsSql, [orderProductsData], (err) => {
                 if (err) {
-                    return db.rollback(() => {
+                    connection.release();
+                    return connection.rollback(() => {
                         res.status(500).json({
                             success: false,
                             message: 'Failed to add products to order.',
@@ -177,8 +185,11 @@ exports.createOrder = (req, res) => {
                 const updateStockPromises = products.map(p => {
                     return new Promise((resolve, reject) => {
                         const updateStockSql = 'UPDATE sizes SET stock = stock - ? WHERE id = ?';
-                        db.query(updateStockSql, [p.quantity, p.sizeId], (err, updateResult) => {
-                            if (err) return reject(err);
+                        connection.query(updateStockSql, [p.quantity, p.sizeId], (err, updateResult) => {
+                            if (err) {
+                                connection.release();
+                                return reject(err);
+                            }
                             resolve();
                         });
                     });
@@ -202,13 +213,13 @@ exports.createOrder = (req, res) => {
 
                 Promise.all(updateStockPromises)
                     .then(() => new Promise((resolve, reject) => {
-                        db.query(fetchDetailsSql, [orderId], (err, results) => {
+                        connection.query(fetchDetailsSql, [orderId], (err, results) => {
                             if (err) return reject(err);
                             resolve(results[0]);
                         });
                     }))
                     .then(details => {
-                        // 5. Generate PDF, save it, update the DB with the file name, and send the email
+                        // 5. Generate PDF, save it, update the connection with the file name, and send the email
                         console.log(details,"details")
                         const orderInfo = {
                             unique_order_id: uniqueOrderId,
@@ -245,9 +256,9 @@ exports.createOrder = (req, res) => {
                                 const invoiceFileName = path.basename(invoicePath);
                                 const updateInvoiceLinkSql = 'UPDATE orders SET invoice_link = ? WHERE id = ?';
                                 return new Promise((resolve, reject) => {
-                                    db.query(updateInvoiceLinkSql, [invoiceFileName, orderId], (err) => {
+                                    connection.query(updateInvoiceLinkSql, [invoiceFileName, orderId], (err) => {
                                         if (err) return reject(err);
-                                        // ⚡️ NEW: Send the invoice email after the DB is updated
+                                        // ⚡️ NEW: Send the invoice email after the connection is updated
                                         const emailBody = "Dear customer, thank you for your order. Please find your invoice attached.";
                                         sendInvoiceEmail(user.email, `Invoice for Order #${uniqueOrderId}`, emailBody, invoicePath)
                                             .then(() => resolve()) // Resolve promise after email is sent
@@ -262,9 +273,10 @@ exports.createOrder = (req, res) => {
                     })
                     .then(() => {
                         // 6. Commit the transaction
-                        db.commit((commitErr) => {
+                        connection.commit((commitErr) => {
                             if (commitErr) {
-                                return db.rollback(() => {
+                                connection.release();
+                                return connection.rollback(() => {
                                     res.status(500).json({
                                         success: false,
                                         message: 'Failed to commit transaction.',
@@ -296,8 +308,9 @@ exports.createOrder = (req, res) => {
                                 WHERE o.id = ?
                                 GROUP BY o.id;
                             `;
-                            db.query(fetchOrderSql, [orderId], (err, fetchResults) => {
+                            connection.query(fetchOrderSql, [orderId], (err, fetchResults) => {
                                 if (err) {
+                                    connection.release();
                                     console.error('Failed to fetch order after creation:', err.message);
                                     return res.status(500).json({
                                         success: false,
@@ -327,7 +340,7 @@ exports.createOrder = (req, res) => {
                         });
                     })
                     .catch(err => {
-                        db.rollback(() => {
+                        connection.rollback(() => {
                             console.error('Transaction rollback due to an error:', err);
                             res.status(500).json({
                                 success: false,
@@ -338,6 +351,7 @@ exports.createOrder = (req, res) => {
                     });
             });
         });
+    });
     });
 };
 
