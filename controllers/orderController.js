@@ -337,6 +337,7 @@ exports.createOrder = (req, res) => {
                                     });
                                 }
                             });
+                            connection.release();
                         });
                     })
                     .catch(err => {
