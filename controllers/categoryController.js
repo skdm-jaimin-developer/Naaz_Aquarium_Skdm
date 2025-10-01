@@ -105,7 +105,7 @@ exports.getAllCategories = (req, res) => {
         }
         const totalCategories = result[0].total;
 
-        const sql = 'SELECT id, name, image, slug, description FROM categories LIMIT ? OFFSET ?';
+        const sql = 'SELECT id, name, image, slug, description FROM categories ORDER BY created_at DESC LIMIT ? OFFSET ?';
         db.query(sql, [limit, offset], (err, categories) => {
             if (err) {
                 return res.status(500).json({ success:false, message: 'Failed to fetch categories.', error: err });

@@ -65,6 +65,7 @@ exports.getAllProducts = (req, res) => {
         LEFT JOIN categories c ON p.category_id = c.id
         LEFT JOIN images i ON p.id = i.product_id
         LEFT JOIN reviews r ON p.id = r.product_id
+        
     `;
     let countSql = `SELECT COUNT(DISTINCT p.id) AS total FROM products p`;
 
@@ -120,7 +121,7 @@ exports.getAllProducts = (req, res) => {
     baseSql += ` GROUP BY p.id`;
 
     // Sorting
-    let orderBy = 'p.id ASC';
+    let orderBy = 'p.created_at DESC';
     if (sort) {
         const [field, order] = sort.split(':');
         if (field === 'price') {
@@ -132,7 +133,7 @@ exports.getAllProducts = (req, res) => {
     baseSql += ` ORDER BY ${orderBy}`;
 
     // Pagination
-    baseSql += ` LIMIT ? OFFSET ?`;
+    baseSql += `  LIMIT ? OFFSET ?`;
     sqlParams.push(parseInt(limit), offset);
     
     // Execute both queries
