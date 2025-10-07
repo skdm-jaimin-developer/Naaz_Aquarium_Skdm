@@ -13,6 +13,6 @@ router.use(authMiddleware);
 router.get('/',adminMiddleware, bannerController.getBanners);
 router.post('/',adminMiddleware, uploadMiddleware, bannerController.createBanner);
 router.put('/:bannerId',adminMiddleware, uploadMiddleware, bannerController.updateBanner);
-router.delete('/:bannerId', bannerController.getBanners);
+router.delete('/:bannerId', bannerController.deleteBanner);
 
 module.exports = router;
