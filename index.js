@@ -15,6 +15,7 @@ const addressRoutes = require('./routes/addressRoutes');
 const categoryRoutes = require('./routes/categoryRoutes');
 const productRoutes = require('./routes/productRoutes');
 const orderRoutes = require('./routes/orderRoutes');
+const bannerRoutes = require('./routes/bannerRoutes');
 
 
 const ensureDirectoryExists = (directoryPath) => {
@@ -81,6 +82,7 @@ app.use('/api/products', productRoutes);
 // app.use('/api/sizes', sizeRoutes);
 // app.use('/api/reviews', reviewRoutes);
 app.use('/api/orders', orderRoutes);
+app.use('/api/banners', bannerRoutes);
 
 // Simple welcome route to confirm the server is running
 app.get('/', (req, res) => {
