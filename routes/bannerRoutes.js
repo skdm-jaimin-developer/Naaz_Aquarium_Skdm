@@ -8,9 +8,9 @@ const adminMiddleware = require('../middleware/adminMiddleware');
 const uploadMiddleware = require('../middleware/uploadMiddleware');
 
 // Protect all routes in this router with authentication middleware
+router.get('/', bannerController.getBanners);
 router.use(authMiddleware);
 
-router.get('/',adminMiddleware, bannerController.getBanners);
 router.post('/',adminMiddleware, uploadMiddleware, bannerController.createBanner);
 router.put('/:bannerId',adminMiddleware, uploadMiddleware, bannerController.updateBanner);
 router.delete('/:bannerId', bannerController.deleteBanner);
