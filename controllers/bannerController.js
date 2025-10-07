@@ -55,7 +55,7 @@ exports.createBanner = (req,res)=>{
 
 exports.deleteBanner = (req, res) => {
     const bannerId = req.params.bannerId;
-    const sql = 'DELETE FROM banner WHERE id = ?';
+    const sql = 'DELETE FROM banners WHERE id = ?';
     db.query(sql, [bannerId], (err, result) => {
         if (err) {
             return res.status(500).json({ success:false, message: 'Failed to delete Banner.', error: err });
