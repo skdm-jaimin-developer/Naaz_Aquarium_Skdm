@@ -15,19 +15,38 @@ exports.getBanners = (req, res) => {
         if (banner.length === 0) {
             return res.status(404).json({ success:false, message: 'banner not found.' });
         }
-        const bannerWithUrl = banner.map(category => ({
-                ...category,
-                image: getImageUrl(category.image_url)
-            }));
+        const bannersWithUrl = banner.map(banner => ({
+            ...banner,
+            image: getImageUrl(banner.image_url)
+        }));
+
+        // 2. Group the banners by their 'type'
+        const categorizedBanners = bannersWithUrl.reduce((acc, banner) => {
+            const type = banner.type || 'other'; // Use 'other' or a default if 'type' is missing
+            
+            // Initialize the array for the type if it doesn't exist
+            if (!acc[type]) {
+                acc[type] = [];
+            }
+            
+            // Add the banner to the appropriate type array
+            acc[type].push(banner);
+            
+            return acc;
+        }, {}); // Start with an empty object {}
+
+        // 3. Send the categorized JSON response
         res.status(200).json({
-            success:true,
-            bannerWithUrl});
-    });
+            success: true,
+            data: categorizedBanners // Use 'data' instead of 'bannerWithUrl' to reflect the structure
+        });
+
+        });
 };
 
 exports.createBanner = (req,res)=>{
-    const {name , is_active} = req.body
-    const image = req.files ? req.files[0].filename : null;
+    const {name , is_active , link='' , type = '' , description=''} = req.body
+    const image = req.files ? req.files[0]?.filename : null;
     if (!name || !is_active) {
         res.status(400).json({
             success:false,
@@ -35,8 +54,8 @@ exports.createBanner = (req,res)=>{
         })
     }
     try {
-        const sql = 'INSERT INTO banners (name , image_url , is_active ) VALUES (? ,? ,?)'
-        db.query(sql,[name , image , is_active],(err,results)=>{
+        const sql = 'INSERT INTO banners (name , image_url , is_active , link , type ,description ) VALUES (? ,? ,? , ? ,? ,?)'
+        db.query(sql,[name , image , is_active , link ,type,description],(err,results)=>{
             if (err) {
             return res.status(500).json({ success: false, message: 'Failed to create Banner.', error: err });
         }
@@ -70,7 +89,7 @@ exports.deleteBanner = (req, res) => {
 exports.updateBanner = async (req, res) => {
     const { bannerId } = req.params;
     const data = req.body; // Contains name, image_url, or is_active
-    const image = req.files ? req.files[0].filename : null;
+    const image = req.files ? req.files[0]?.filename : null;
     // Validation
     if (isNaN(parseInt(bannerId))) {
         return res.status(400).json({ error: 'Invalid banner ID provided.' });
@@ -96,6 +115,19 @@ exports.updateBanner = async (req, res) => {
         if (data.is_active !== undefined) {
             updates.push('is_active = ?');
             values.push(data.is_active);
+        }
+
+        if (data.link) {
+            updates.push('link = ?');
+            values.push(data.link);
+        }
+        if (data.type) {
+            updates.push('type = ?');
+            values.push(data.type);
+        }
+        if (data.description) {
+            updates.push('description = ?');
+            values.push(data.description);
         }
 
         if (updates.length === 0) {
