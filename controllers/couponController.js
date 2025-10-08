@@ -1,4 +1,4 @@
-const CouponModel = require('../models/couponModel');
+const CouponModel = require('../models/CouponModel');
 
 
 const extractCouponData = (body) => {
