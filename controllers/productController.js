@@ -19,7 +19,7 @@ const slugify = (str) => {
 };
 
 const formatProductData = (product) => {
-    const { category_name, category_slug, category_description, ...rest } = product;
+    const { category_name, category_slug, category_description,coupons: couponsString, ...rest } = product;
     const images = product.images ? product.images.split(';').map(img => {
         const parts = img.split(':');
         return {
@@ -36,7 +36,20 @@ const formatProductData = (product) => {
         const parts = review.split(':');
         return { id: parseInt(parts[0]), name: parts[1], review: parts[2] };
     }) : [];
-
+     const coupons = couponsString ? couponsString.split(';').map(coupon => {
+        const parts = coupon.split(':');
+        return { 
+            id: parseInt(parts[0]), 
+            code: parts[1], 
+            type: parts[2], // e.g., 'percentage', 'fixed'
+            value: parseFloat(parts[3]),
+            description: parts[4],
+            min_purchase: parseFloat(parts[5]), // Part 5 (min_purchase)
+            max_discount: parseFloat(parts[6]), // Part 6 (max_discount)
+            start_date: parts[7], // Part 7 (start_date)
+            end_date: parts[8]    // Part 8 (end_date)
+        };
+    }) : [];
     return {
         ...rest,
         category: {
@@ -47,7 +60,8 @@ const formatProductData = (product) => {
         },
         images,
         sizes,
-        reviews
+        reviews,
+        coupons
     };
 };
 
@@ -169,23 +183,32 @@ exports.getProductBySlug = (req, res) => {
     const slug = req.params.slug;
     const sql = `
         SELECT p.*,
-               c.name AS category_name, c.slug AS category_slug, c.description AS category_description,
-               GROUP_CONCAT(DISTINCT CONCAT(i.id, ':', i.url) SEPARATOR ';') AS images,
-               GROUP_CONCAT(DISTINCT CONCAT(s.id, ':', s.name, ':', s.price, ':', s.discount_price, ':', s.stock) SEPARATOR ';') AS sizes,
-               GROUP_CONCAT(DISTINCT CONCAT(r.id, ':', r.name, ':', r.review) SEPARATOR ';') AS reviews
+       c.name AS category_name, c.slug AS category_slug, c.description AS category_description,
+       GROUP_CONCAT(DISTINCT CONCAT(i.id, ':', i.url) SEPARATOR ';') AS images,
+       GROUP_CONCAT(DISTINCT CONCAT(s.id, ':', s.name, ':', s.price, ':', s.discount_price, ':', s.stock) SEPARATOR ';') AS sizes,
+       GROUP_CONCAT(DISTINCT CONCAT(r.id, ':', r.name, ':', r.review) SEPARATOR ';') AS reviews,
+       GROUP_CONCAT(DISTINCT CONCAT(cou.id, ':', cou.code, ':', cou.type, ':', cou.value, ':', cou.description, ':', cou.min_purchase, ':', cou.max_discount , ':', cou.start_date, ':', cou.end_date) SEPARATOR ';') AS coupons
         FROM products p
         LEFT JOIN categories c ON p.category_id = c.id
         LEFT JOIN images i ON p.id = i.product_id
         LEFT JOIN sizes s ON p.id = s.product_id
         LEFT JOIN reviews r ON p.id = r.product_id
+        LEFT JOIN coupons cou
+            -- Join condition: Coupon applies if it's store-wide OR it's specifically linked to the product
+            ON cou.apply_on = 'all' OR cou.id IN (
+                SELECT coupon_id
+                FROM coupon_products
+                WHERE product_id = p.id
+            )
         WHERE p.slug = ?
         GROUP BY p.id;
+
     `;
 
     db.query(sql, [slug], (err, results) => {
         if (err) return res.status(500).json({ success: false, message: 'Failed to fetch product.', error: err });
         if (results.length === 0) return res.status(404).json({ success: false, message: 'Product not found.' });
-        
+        console.log(results[0])
         const formattedProduct = formatProductData(results[0]);
 
         res.json({ success: true, product: formattedProduct });
