@@ -208,7 +208,6 @@ exports.getProductBySlug = (req, res) => {
     db.query(sql, [slug], (err, results) => {
         if (err) return res.status(500).json({ success: false, message: 'Failed to fetch product.', error: err });
         if (results.length === 0) return res.status(404).json({ success: false, message: 'Product not found.' });
-        console.log(results[0])
         const formattedProduct = formatProductData(results[0]);
 
         res.json({ success: true, product: formattedProduct });
