@@ -251,13 +251,30 @@ const fetchProductDetails = (productId, res, successMessage, statusCode) => {
 };
 
 exports.createProduct = (req, res) => {
-    const { name, description, category_id } = req.body;
+    const { name, description, category_id , tax ,shipping  } = req.body;
     if (!name || !category_id) return res.status(400).json({ success: false, message: 'Product name and category ID are required.' });
 
     const slug = slugify(name);
-    const sql = 'INSERT INTO products (name, description, category_id, slug) VALUES (?, ?, ?, ?)';
+    const columns = ['name', 'description', 'category_id', 'slug'];
+    const placeholders = ['?', '?', '?', '?'];
+    const values = [name, description, category_id, slug];
 
-    db.query(sql, [name, description, category_id, slug], (err, result) => {
+   
+    if (tax !== undefined && tax !== null) {
+        columns.push('tax');
+        placeholders.push('?');
+        values.push(tax);
+    }
+
+    if (shipping !== undefined && shipping !== null) {
+        columns.push('shipping');
+        placeholders.push('?');
+        values.push(shipping);
+    }
+
+    const sql = `INSERT INTO products (${columns.join(', ')}) VALUES (${placeholders.join(', ')})`;
+
+    db.query(sql, values, (err, result) => {
         if (err) {
             if (err.code === 'ER_DUP_ENTRY') {
                 return res.status(400).json({ success: false, message: 'Product with this slug already exists.' });
@@ -289,7 +306,7 @@ exports.createProduct = (req, res) => {
 
 exports.updateProduct = (req, res) => {
     const { id } = req.params;
-    const { name, description, category_id } = req.body;
+    const { name, description, category_id ,tax ,shipping } = req.body;
     
     const slug = name ? slugify(name) : undefined;
     
@@ -298,6 +315,8 @@ exports.updateProduct = (req, res) => {
     if (description) updateFields.description = description;
     if (category_id) updateFields.category_id = category_id;
     if (slug) updateFields.slug = slug;
+    if (tax) updateFields.tax = tax;
+    if (shipping) updateFields.shipping = shipping;
 
     const sql = `UPDATE products SET ? WHERE id = ?`;
     

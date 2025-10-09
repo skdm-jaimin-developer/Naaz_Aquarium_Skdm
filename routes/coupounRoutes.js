@@ -11,8 +11,8 @@ router.get('/', couponController.getAllCoupons);
 router.get('/:id', couponController.getCouponById);
 router.get('/code/:code', couponController.getCouponByCode);
 
-router.post('/', upload,couponController.createCoupon);
-router.put('/:id',upload, couponController.updateCoupon);
-router.delete('/:id', couponController.deleteCoupon);
+router.post('/',authMiddleware,adminMiddleware, upload,couponController.createCoupon);
+router.put('/:id',authMiddleware,adminMiddleware,upload, couponController.updateCoupon);
+router.delete('/:id',authMiddleware,adminMiddleware, couponController.deleteCoupon);
 
 module.exports = router;
