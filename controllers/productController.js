@@ -5,7 +5,7 @@ const fs = require('fs');
 // Helper function to generate an image URL
 const getImageUrl = (imageName) => {
     const port = process.env.PORT || 3000;
-    return `https://naaz-aquarium-skdm.onrender.com/uploads/product_images/${imageName}`;
+    return `https://api.naazaquarium.in/uploads/product_images/${imageName}`;
 };
 
 // Helper function to create a slug from a string

@@ -2,7 +2,7 @@ const db = require('../models/db');
 
 const getImageUrl = (imageName) => {
     const port = process.env.PORT || 3000; // Use environment variable or default port
-    return `https://naaz-aquarium-skdm.onrender.com/uploads/product_images/${imageName}`;
+    return `https://api.naazaquarium.in/uploads/product_images/${imageName}`;
 };
 
 exports.getBanners = (req, res) => {

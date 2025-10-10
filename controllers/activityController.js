@@ -7,7 +7,7 @@ const db = require('../models/db'); // For complex joins/queries
  */
 const getImageUrl = (imageName) => {
     const port = process.env.PORT || 3000;
-    return `https://naaz-aquarium-skdm.onrender.com/uploads/product_images/${imageName}`;
+    return `https://api.naazaquarium.in/uploads/product_images/${imageName}`;
 };
 
 exports.createOrUpdateActivity = (req, res) => {
