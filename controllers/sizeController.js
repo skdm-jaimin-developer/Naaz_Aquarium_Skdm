@@ -2,13 +2,27 @@ const db = require('../models/db');
 
 exports.addSize = (req, res) => {
     const { productId } = req.params;
-    const { name, price, discount_price, stock } = req.body;
+    // Added length, width, height, weight
+    const { name, price, discount_price, stock, length, width, height, weight } = req.body; 
+
+    // Updated required fields check
     if (!name || !price || !stock) {
         return res.status(400).json({ success: false, message: 'Size name, price, and stock are required.' });
     }
 
-    const sql = 'INSERT INTO sizes (product_id, name, price, discount_price, stock) VALUES (?, ?, ?, ?, ?)';
-    db.query(sql, [productId, name, price, discount_price || null, stock], (err, result) => {
+    // Updated SQL query and parameters
+    const sql = 'INSERT INTO sizes (product_id, name, price, discount_price, stock, length, width, height, weight) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)';
+    db.query(sql, [
+        productId, 
+        name, 
+        price, 
+        discount_price || null, 
+        stock, 
+        length || null, // Allow null if not provided
+        width || null,  // Allow null if not provided
+        height || null, // Allow null if not provided
+        weight || null  // Allow null if not provided
+    ], (err, result) => {
         if (err) {
             return res.status(500).json({ success: false, message: 'Failed to add size.', error: err });
         }
@@ -29,10 +43,22 @@ exports.getSizesByProductId = (req, res) => {
 
 exports.updateSize = (req, res) => {
     const { sizeId } = req.params;
-    const { name, price, discount_price, stock } = req.body;
+    // Added length, width, height, weight
+    const { name, price, discount_price, stock, length, width, height, weight } = req.body;
 
-    const sql = 'UPDATE sizes SET name = ?, price = ?, discount_price = ?, stock = ? WHERE id = ?';
-    db.query(sql, [name, price, discount_price || null, stock, sizeId], (err, result) => {
+    // Updated SQL query to set all new columns
+    const sql = 'UPDATE sizes SET name = ?, price = ?, discount_price = ?, stock = ?, length = ?, width = ?, height = ?, weight = ? WHERE id = ?';
+    db.query(sql, [
+        name, 
+        price, 
+        discount_price || null, 
+        stock, 
+        length || null, 
+        width || null, 
+        height || null, 
+        weight || null, 
+        sizeId
+    ], (err, result) => {
         if (err) {
             return res.status(500).json({ success: false, message: 'Failed to update size.', error: err });
         }
@@ -56,3 +82,9 @@ exports.deleteSize = (req, res) => {
         res.json({ success: true, message: 'Size deleted successfully.' });
     });
 };
+
+
+
+
+
+

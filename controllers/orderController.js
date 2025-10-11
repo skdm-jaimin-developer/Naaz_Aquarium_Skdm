@@ -28,7 +28,7 @@ const formatOrderData = (order) => {
             id, name, description, category_id, no_of_reviews, slug,
             images, sizeDetails,
             category_name, category_slug, category_description,
-            quantity
+            quantity , discount
         ] = parts;
 
         const [sizeId, sizeName, price, discount_price, stock] = sizeDetails.split(':');
@@ -55,6 +55,7 @@ const formatOrderData = (order) => {
                 stock: parseInt(stock)
             },
             quantity: parseInt(quantity),
+            discount: parseInt(discount),
             category: {
                 id: parseInt(category_id),
                 name: category_name,
@@ -77,6 +78,9 @@ const formatOrderData = (order) => {
         subtotal: parseFloat(order.subtotal),
         tax: parseFloat(order.tax),
         total: parseFloat(order.total),
+        shipping: parseFloat(order.shipping),
+        discount: parseFloat(order.discount),
+        grand_total: parseFloat(order.grand_total),
         invoice_link: getInvoiceUrl(order.invoice_link),
         created_at: order.created_at,
         updated_at: order.updated_at,
@@ -111,6 +115,9 @@ exports.createOrder = (req, res) => {
         subtotal,
         tax,
         total,
+        shipping,
+        discount,
+        grand_total,
         products
     } = req.body;
 
@@ -131,6 +138,9 @@ exports.createOrder = (req, res) => {
         tax,
         total,
         payment_mode: paymentMode,
+        shipping,
+        discount,
+        grand_total,
     };
 
      db.getConnection((err, connection) => {
@@ -166,8 +176,8 @@ exports.createOrder = (req, res) => {
             const orderId = result.insertId;
 
             // 2. Insert product and quantity details into the `order_products` table
-            const insertOrderProductsSql = 'INSERT INTO order_products (order_id, product_id, size_id, quantity) VALUES ?';
-            const orderProductsData = products.map(p => [orderId, p.productId, p.sizeId, p.quantity]);
+            const insertOrderProductsSql = 'INSERT INTO order_products (order_id, product_id, size_id, quantity ,discount) VALUES ?';
+            const orderProductsData = products.map(p => [orderId, p.productId, p.sizeId, p.quantity ,p.discount]);
 
             connection.query(insertOrderProductsSql, [orderProductsData], (err) => {
                 if (err) {
@@ -200,7 +210,7 @@ exports.createOrder = (req, res) => {
                     SELECT 
                         u.name AS user_name, u.email AS user_email,u.mobile AS user_mobile,
                         a.address1, a.address2, a.landmark, a.city, a.state, a.pincode,
-                        GROUP_CONCAT(DISTINCT CONCAT(p.name, ':', s.discount_price, ':', op.quantity, ':', s.name) SEPARATOR ';') AS products
+                        GROUP_CONCAT(DISTINCT CONCAT(p.name, ':', s.discount_price, ':', op.quantity, ':',op.discount, ':', s.name) SEPARATOR ';') AS products
                     FROM orders o
                     JOIN users u ON o.user_id = u.id
                     JOIN addresses a ON o.address_id = a.id
@@ -220,12 +230,15 @@ exports.createOrder = (req, res) => {
                     }))
                     .then(details => {
                         // 5. Generate PDF, save it, update the connection with the file name, and send the email
-                        console.log(details,"details")
+                        
                         const orderInfo = {
                             unique_order_id: uniqueOrderId,
                             subtotal,
                             tax,
-                            total
+                            total,
+                            shipping,
+                            discount,
+                            grand_total
                         };
                         const user = {
                             name: details.user_name,
@@ -240,18 +253,19 @@ exports.createOrder = (req, res) => {
                             pincode: details.pincode
                         };
                         const productsForPdf = details.products.split(';').map(p => {
-                            const [name, discount_price, quantity, size_name] = p.split(':');
+                            const [name, discount_price, quantity,discount, size_name] = p.split(':');
                             return {
                                 name,
                                 price: parseFloat(discount_price),
                                 quantity: parseInt(quantity),
-                                size_name
+                                size_name,
+                                discount:parseInt(discount)
                             };
                         });
 
                         return generatePdfAndSave(orderInfo, productsForPdf, user, address)
                             .then(invoicePath => {
-                                console.log(invoicePath)
+                                
                                 // Store only the file name in the database
                                 const invoiceFileName = path.basename(invoicePath);
                                 const updateInvoiceLinkSql = 'UPDATE orders SET invoice_link = ? WHERE id = ?';
@@ -289,6 +303,7 @@ exports.createOrder = (req, res) => {
                                 SELECT
                                     o.id, o.unique_order_id, o.user_id, o.address_id, o.status, o.payment_status, o.delivery_status, o.payment_mode, o.transaction_id,
                                     o.subtotal, o.tax, o.total, o.invoice_link, o.created_at, o.updated_at,
+                                    o.shipping , o.discount , o.grand_total , 
                                     u.name AS user_name, u.email AS user_email,u.mobile AS user_mobile,
                                     a.address1 AS address_line1, a.address2 AS address_line2, a.landmark AS address_landmark, a.city AS address_city, a.state AS address_state, a.pincode AS address_pincode,
                                     GROUP_CONCAT(
@@ -296,7 +311,7 @@ exports.createOrder = (req, res) => {
                                             p.id, '|', p.name, '|', p.description, '|', p.category_id, '|', p.no_of_reviews, '|', p.slug, '|',
                                             (SELECT GROUP_CONCAT(CONCAT(id, ':', url) SEPARATOR ',') FROM images WHERE product_id = p.id), '|',
                                             (SELECT CONCAT(s.id, ':', s.name, ':', s.price, ':', s.discount_price, ':', s.stock) FROM sizes s WHERE s.id = op.size_id), '|',
-                                            c.name, '|', c.slug, '|', c.description, '|', op.quantity
+                                            c.name, '|', c.slug, '|', c.description, '|', op.quantity ,'|', op.discount
                                         ) SEPARATOR ';'
                                     ) AS products
                                 FROM orders o
@@ -381,6 +396,7 @@ exports.getAllOrders = (req, res) => {
             SELECT
                 o.id, o.unique_order_id, o.user_id, o.address_id, o.status, o.payment_status, o.delivery_status, o.payment_mode, o.transaction_id,
                 o.subtotal, o.tax, o.total, o.invoice_link, o.created_at, o.updated_at,
+                o.shipping , o.discount , o.grand_total , 
                 u.name AS user_name, u.email AS user_email,u.mobile AS user_mobile,
                 a.address1 AS address_line1, a.address2 AS address_line2, a.landmark AS address_landmark, a.city AS address_city, a.state AS address_state, a.pincode AS address_pincode,
                 GROUP_CONCAT(
@@ -388,7 +404,7 @@ exports.getAllOrders = (req, res) => {
                         p.id, '|', p.name, '|', p.description, '|', p.category_id, '|', p.no_of_reviews, '|', p.slug, '|',
                         (SELECT GROUP_CONCAT(CONCAT(id, ':', url) SEPARATOR ',') FROM images WHERE product_id = p.id), '|',
                         (SELECT CONCAT(s.id, ':', s.name, ':', s.price, ':', s.discount_price, ':', s.stock) FROM sizes s WHERE s.id = op.size_id),
-                        c.name, '|', c.slug, '|', c.description, '|', op.quantity
+                        c.name, '|', c.slug, '|', c.description, '|', op.quantity ,'|', op.discount
                     ) SEPARATOR ';'
                 ) AS products
             FROM orders o
@@ -434,6 +450,7 @@ exports.getOrderById = (req, res) => {
         SELECT
             o.id, o.unique_order_id, o.user_id, o.address_id, o.status, o.payment_status, o.delivery_status, o.payment_mode, o.transaction_id,
             o.subtotal, o.tax, o.total, o.invoice_link, o.created_at, o.updated_at,
+            o.shipping , o.discount , o.grand_total , 
             u.name AS user_name, u.email AS user_email,u.mobile AS user_mobile,
             a.address1 AS address_line1, a.address2 AS address_line2, a.landmark AS address_landmark, a.city AS address_city, a.state AS address_state, a.pincode AS address_pincode,
             GROUP_CONCAT(
@@ -441,7 +458,7 @@ exports.getOrderById = (req, res) => {
                     p.id, '|', p.name, '|', p.description, '|', p.category_id, '|', p.no_of_reviews, '|', p.slug, '|',
                     (SELECT GROUP_CONCAT(CONCAT(id, ':', url) SEPARATOR ',') FROM images WHERE product_id = p.id), '|',
                     (SELECT CONCAT(s.id, ':', s.name, ':', s.price, ':', s.discount_price, ':', s.stock) FROM sizes s WHERE s.id = op.size_id), '|',
-                    c.name, '|', c.slug, '|', c.description, '|', op.quantity
+                    c.name, '|', c.slug, '|', c.description, '|', op.quantity ,'|', op.discount
                 ) SEPARATOR ';'
             ) AS products
         FROM orders o
@@ -499,6 +516,7 @@ exports.getOrdersByUserId = (req, res) => {
             SELECT
                 o.id, o.unique_order_id, o.user_id, o.address_id, o.status, o.payment_status, o.delivery_status, o.payment_mode, o.transaction_id,
                 o.subtotal, o.tax, o.total, o.invoice_link, o.created_at, o.updated_at,
+                o.shipping , o.discount , o.grand_total , 
                 u.name AS user_name, u.email AS user_email,u.mobile AS user_mobile,
                 a.address1 AS address_line1, a.address2 AS address_line2, a.landmark AS address_landmark, a.city AS address_city, a.state AS address_state, a.pincode AS address_pincode,
                 GROUP_CONCAT(
@@ -506,7 +524,7 @@ exports.getOrdersByUserId = (req, res) => {
                         p.id, '|', p.name, '|', p.description, '|', p.category_id, '|', p.no_of_reviews, '|', p.slug, '|',
                         (SELECT GROUP_CONCAT(CONCAT(id, ':', url) SEPARATOR ',') FROM images WHERE product_id = p.id), '|',
                         (SELECT CONCAT(s.id, ':', s.name, ':', s.price, ':', s.discount_price, ':', s.stock) FROM sizes s WHERE s.id = op.size_id), '|',
-                        c.name, '|', c.slug, '|', c.description, '|', op.quantity
+                        c.name, '|', c.slug, '|', c.description, '|', op.quantity ,'|', op.discount
                     ) SEPARATOR ';'
                 ) AS products
             FROM orders o

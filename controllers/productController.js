@@ -30,7 +30,7 @@ const formatProductData = (product) => {
 
     const sizes = product.sizes ? product.sizes.split(';').map(size => {
         const parts = size.split(':');
-        return { id: parseInt(parts[0]), name: parts[1], price: parseFloat(parts[2]), discount_price: parseFloat(parts[3]), stock: parseInt(parts[4]) };
+        return { id: parseInt(parts[0]), name: parts[1], price: parseFloat(parts[2]), discount_price: parseFloat(parts[3]), stock: parseInt(parts[4]) ,  length:parts[5], width:parts[6], height:parts[7], weight:parts[8] };
     }) : [];
     const reviews = product.reviews ? product.reviews.split(';').map(review => {
         const parts = review.split(':');
@@ -73,7 +73,7 @@ exports.getAllProducts = (req, res) => {
         SELECT p.*,
                c.name AS category_name, c.slug AS category_slug, c.description AS category_description,
                GROUP_CONCAT(DISTINCT CONCAT(i.id, ':', i.url) SEPARATOR ';') AS images,
-               GROUP_CONCAT(DISTINCT CONCAT(s.id, ':', s.name, ':', s.price, ':', s.discount_price, ':', s.stock) SEPARATOR ';') AS sizes,
+               GROUP_CONCAT(DISTINCT CONCAT(s.id, ':', s.name, ':', s.price, ':', s.discount_price, ':', s.stock , ':', s.length, ':', s.width, ':', s.height, ':', s.weight) SEPARATOR ';') AS sizes,
                GROUP_CONCAT(DISTINCT CONCAT(r.id, ':', r.name, ':', r.review) SEPARATOR ';') AS reviews
         FROM products p
         LEFT JOIN categories c ON p.category_id = c.id
@@ -185,7 +185,7 @@ exports.getProductBySlug = (req, res) => {
         SELECT p.*,
        c.name AS category_name, c.slug AS category_slug, c.description AS category_description,
        GROUP_CONCAT(DISTINCT CONCAT(i.id, ':', i.url) SEPARATOR ';') AS images,
-       GROUP_CONCAT(DISTINCT CONCAT(s.id, ':', s.name, ':', s.price, ':', s.discount_price, ':', s.stock) SEPARATOR ';') AS sizes,
+       GROUP_CONCAT(DISTINCT CONCAT(s.id, ':', s.name, ':', s.price, ':', s.discount_price, ':', s.stock, ':', s.length, ':', s.width, ':', s.height, ':', s.weight) SEPARATOR ';') AS sizes,
        GROUP_CONCAT(DISTINCT CONCAT(r.id, ':', r.name, ':', r.review) SEPARATOR ';') AS reviews,
        GROUP_CONCAT(DISTINCT CONCAT(cou.id, ':', cou.code, ':', cou.type, ':', cou.value, ':', cou.description, ':', cou.min_purchase, ':', cou.max_discount , ':', cou.start_date, ':', cou.end_date) SEPARATOR ';') AS coupons
         FROM products p
@@ -219,7 +219,7 @@ const fetchProductDetails = (productId, res, successMessage, statusCode) => {
         SELECT p.*,
                c.name AS category_name, c.slug AS category_slug, c.description AS category_description,
                GROUP_CONCAT(DISTINCT CONCAT(i.id, ':', i.url) SEPARATOR ';') AS images,
-               GROUP_CONCAT(DISTINCT CONCAT(s.id, ':', s.name, ':', s.price, ':', s.discount_price, ':', s.stock) SEPARATOR ';') AS sizes,
+               GROUP_CONCAT(DISTINCT CONCAT(s.id, ':', s.name, ':', s.price, ':', s.discount_price, ':', s.stock , ':', s.length, ':', s.width, ':', s.height, ':', s.weight) SEPARATOR ';') AS sizes,
                GROUP_CONCAT(DISTINCT CONCAT(r.id, ':', r.name, ':', r.review) SEPARATOR ';') AS reviews
         FROM products p
         LEFT JOIN categories c ON p.category_id = c.id
