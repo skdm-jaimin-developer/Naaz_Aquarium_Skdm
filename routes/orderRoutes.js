@@ -4,6 +4,8 @@ const orderController = require('../controllers/orderController');
 const authMiddleware = require('../middleware/authMiddleware'); 
 const adminMiddleware = require('../middleware/adminMiddleware'); 
 
+router.get('/status/:orderId',  orderController.status);
+
 // Apply authMiddleware to ALL routes below this line
 router.use(authMiddleware);
 

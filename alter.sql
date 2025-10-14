@@ -13,3 +13,18 @@ ADD COLUMN length DECIMAL(10, 2),
 ADD COLUMN width DECIMAL(10, 2),
 ADD COLUMN height DECIMAL(10, 2),
 ADD COLUMN weight DECIMAL(10, 2);
+
+ALTER TABLE products
+MODIFY COLUMN tax DECIMAL(6, 2) DEFAULT 0.00,
+MODIFY COLUMN shipping DECIMAL(6, 2) DEFAULT 0.00;
+
+UPDATE products
+SET
+    tax = 0.00,
+    shipping = 0.00
+WHERE
+    tax IS NULL OR shipping IS NULL;
+
+
+    ALTER TABLE orders
+MODIFY COLUMN delivery_status VARCHAR(30) NULL DEFAULT NULL;
