@@ -549,7 +549,15 @@ exports.status = async (req, res) => {
         if (!merchantOrderId) {
             return res.status(400).json({ success: false, message: 'Missing Order ID.' });
         }
+        const payment_status = await queryPromise(`SELECT payment_status from orders where unique_order_id = ? `,[merchantOrderId] )
 
+        if (!payment_status || payment_status.length === 0) {
+            return res.status(404).send({success:false,message:'Order details not found.', navigate_to : `/failed/${merchantOrderId}`});
+        }
+
+        if (payment_status[0].payment_status == 'paid') {
+            return res.status(400).send({success:false,message:'Order already paid  .', navigate_to : `/success/${merchantOrderId}`});
+        }
         // 1. Use the SDK's getOrderStatus method for secure verification
         const statusResponse = await phonePeClient.getOrderStatus(merchantOrderId);
         console.log(statusResponse)
@@ -773,6 +781,6 @@ exports.status = async (req, res) => {
             console.error('Post-Payment Processing Error:', error);
             // In a real app, log the error and potentially use a payment status check API
             // or a retry mechanism for your business logic.
-            return res.status(500).send({success:false,message:'Processing Error', navigate_to : `/failed/${merchantOrderId}`});
+            return res.status(500).send({success:false,message:'Processing Error'});
         }
 };
