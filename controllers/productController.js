@@ -76,7 +76,7 @@ exports.getAllProducts = (req, res) => {
                GROUP_CONCAT(DISTINCT CONCAT(s.id, ':', s.name, ':', s.price, ':', s.discount_price, ':', s.stock , ':', s.length, ':', s.width, ':', s.height, ':', s.weight) SEPARATOR ';') AS sizes,
                GROUP_CONCAT(DISTINCT CONCAT(r.id, ':', r.name, ':', r.review) SEPARATOR ';') AS reviews
         FROM products p
-        LEFT JOIN categories c ON p.category_id = c.id
+        INNER JOIN categories c ON p.category_id = c.id
         LEFT JOIN images i ON p.id = i.product_id
         LEFT JOIN reviews r ON p.id = r.product_id
         

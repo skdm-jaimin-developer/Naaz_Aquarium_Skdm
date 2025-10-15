@@ -31,4 +31,4 @@ WHERE
 
 
     ALTER TABLE orders
-MODIFY COLUMN delivery_status VARCHAR(30) NULL DEFAULT NULL;
+MODIFY COLUMN delivery_status VARCHAR(30) NULL DEFAULT pending;

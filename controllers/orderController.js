@@ -566,9 +566,10 @@ exports.status = async (req, res) => {
         
                 if (paymentState === 'COMPLETED') {
                     const newStatus = 'PAID';
-                    const updateSql = 'UPDATE orders SET payment_status = ? WHERE unique_order_id = ?';
+                    const neworderStatus = 'processing'
+                    const updateSql = 'UPDATE orders SET payment_status = ? , status = ? WHERE unique_order_id = ?';
 
-                    await queryPromise(updateSql, [newStatus, merchantOrderId], (err, result) => {
+                    await queryPromise(updateSql, [newStatus,neworderStatus, merchantOrderId], (err, result) => {
                         if (err) {
                             return res.status(500).send({success:false,message:'Some error Ocuured.', navigate_to : `/failed/${merchantOrderId}`});
                         }
@@ -722,8 +723,8 @@ exports.status = async (req, res) => {
                         };
 
                         const shipmentResponse = await createShipment(shiprocketPayload)
-                        console.log(shipmentResponse ,"shipmentResponse",shipmentResponse.status ,"shipmentResponse")
-                            try {
+
+                        try {
                                 // 1. Generate the PDF and get the path. (This is already set up correctly)
                                 const invoicePath = await generatePdfAndSave(orderInfo, productsForPdf, user, address);
                                 
