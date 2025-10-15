@@ -268,7 +268,7 @@ exports.createOrder = async (req, res) => {
         const merchantOrderId = orderDetails.unique_order_id;
         
         // Define payment URLs
-        const redirectUrl = `http://localhost:5173/order-status/${merchantOrderId}`;
+        const redirectUrl = `https://naazaquarium.in/order-status/${merchantOrderId}`;
         const callbackUrl = `${req.protocol}://${req.get('host')}/api/phonepe/callback`;
 
         // 5. Initiate Payment
