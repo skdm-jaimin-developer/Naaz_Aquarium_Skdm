@@ -49,6 +49,7 @@ const formatOrderData = (order) => {
     };
 
     const productParser = (p) => {
+        
         const parts = p.split('|');
        
         const [
@@ -57,37 +58,37 @@ const formatOrderData = (order) => {
             category_name, category_slug, category_description,
             quantity , discount
         ] = parts;
-         
+        console.log(parts) 
         const [sizeId, sizeName, price, discount_price, stock] = sizeDetails.split(':');
-
+        console.log(sizeId, sizeName, price, discount_price, stock)
         return {
-            id: parseInt(id),
-            name: name,
-            description: description,
-            category_id: parseInt(category_id),
-            no_of_reviews: parseInt(no_of_reviews),
-            slug: slug,
+            id: parseInt(id??0),
+            name: name??'',
+            description: description??'',
+            category_id: parseInt(category_id??0),
+            no_of_reviews: parseInt(no_of_reviews??0),
+            slug: slug??'',
             images: parseAggregatedData(images, (img) => {
                 const [imgId, url] = img.split(':');
                 return {
-                    id: parseInt(imgId),
-                    url:getImageUrl(url)
+                    id: parseInt(imgId??0),
+                    url:getImageUrl(url??'')
                 };
             }),
             size: {
-                id: parseInt(sizeId),
-                name: sizeName,
-                price: parseFloat(price),
-                discount_price: parseFloat(discount_price),
-                stock: parseInt(stock)
+                id: parseInt(sizeId??0),
+                name: sizeName??'',
+                price: parseFloat(price??0),
+                discount_price: parseFloat(discount_price??0),
+                stock: parseInt(stock??0)
             },
-            quantity: parseInt(quantity),
-            discount: discount,
+            quantity: parseInt(quantity??0),
+            discount: discount??0,
             category: {
-                id: parseInt(category_id),
-                name: category_name,
-                slug: category_slug,
-                description: category_description
+                id: parseInt(category_id??0),
+                name: category_name??0,
+                slug: category_slug??0,
+                description: category_description??0
             }
         };
     };
