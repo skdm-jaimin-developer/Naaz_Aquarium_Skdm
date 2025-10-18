@@ -5,6 +5,7 @@ const authMiddleware = require('../middleware/authMiddleware');
 // Public routes for authentication
 router.post('/register', authController.registerUser);
 router.post('/login', authController.loginUser);
+router.post('/google-login', authController.googleLogin);
 router.put('/update', authMiddleware,authController.updateProfile);
 
 module.exports = router;

@@ -179,6 +179,120 @@ exports.getAllProducts = (req, res) => {
     });
 };
 
+exports.getAllProductsadmin = (req, res) => {
+    const { page = 1, limit = 10, sort, price_min, price_max, size_min, size_max, category_ids } = req.query;
+    const offset = (parseInt(page) - 1) * parseInt(limit);
+
+    let baseSql = `
+        SELECT p.*,
+               c.name AS category_name, c.slug AS category_slug, c.description AS category_description,
+               GROUP_CONCAT(DISTINCT CONCAT(i.id, ':', i.url) SEPARATOR ';') AS images,
+               GROUP_CONCAT(DISTINCT CONCAT(s.id, ':', s.name, ':', s.price, ':', s.discount_price, ':', s.stock , ':', s.length, ':', s.width, ':', s.height, ':', s.weight) SEPARATOR ';') AS sizes,
+               GROUP_CONCAT(DISTINCT CONCAT(r.id, ':', r.name, ':', r.review) SEPARATOR ';') AS reviews
+        FROM products p
+        LEFT JOIN categories c ON p.category_id = c.id
+        LEFT JOIN images i ON p.id = i.product_id
+        LEFT JOIN reviews r ON p.id = r.product_id
+        
+    `;
+    let countSql = `SELECT COUNT(DISTINCT p.id) AS total FROM products p`;
+
+    const whereClauses = [];
+    const sqlParams = [];
+
+    // Check if we need to join the sizes table
+    const needsSizeJoin = price_min || price_max || size_min || size_max || sort === 'price:low-high' || sort === 'price:high-low';
+    if (needsSizeJoin) {
+        baseSql += ` JOIN sizes s ON p.id = s.product_id`;
+        countSql += ` JOIN sizes s ON p.id = s.product_id`;
+    } else {
+        baseSql += ` LEFT JOIN sizes s ON p.id = s.product_id`;
+    }
+
+    // Filter by Price Range
+    if (price_min) {
+        whereClauses.push(`s.price >= ?`);
+        sqlParams.push(parseFloat(price_min));
+    }
+    if (price_max) {
+        whereClauses.push(`s.price <= ?`);
+        sqlParams.push(parseFloat(price_max));
+    }
+
+    // Filter by Size Range
+    if (size_min) {
+        whereClauses.push(`CAST(s.name AS UNSIGNED) >= ?`);
+        sqlParams.push(parseInt(size_min));
+    }
+    if (size_max) {
+        whereClauses.push(`CAST(s.name AS UNSIGNED) <= ?`);
+        sqlParams.push(parseInt(size_max));
+    }
+
+    // Filter by Category IDs
+    if (category_ids) {
+        const ids = category_ids.split(',').map(id => parseInt(id.trim())).filter(id => !isNaN(id));
+        if (ids.length > 0) {
+            whereClauses.push(`p.category_id IN (?)`);
+            sqlParams.push(ids);
+        }
+    }
+    
+    // Construct WHERE clause for both queries
+    if (whereClauses.length > 0) {
+        const whereClauseString = ` WHERE ` + whereClauses.join(' AND ');
+        baseSql += whereClauseString;
+        countSql += whereClauseString;
+    }
+    
+    // Grouping
+    baseSql += ` GROUP BY p.id`;
+
+    // Sorting
+    let orderBy = 'p.created_at DESC';
+    if (sort) {
+        const [field, order] = sort.split(':');
+        if (field === 'price') {
+            orderBy = `MIN(s.price) ${order === 'high-low' ? 'DESC' : 'ASC'}`;
+        } else if (field === 'name') {
+            orderBy = `p.name ${order === 'high-low' ? 'DESC' : 'ASC'}`;
+        }
+    }
+    baseSql += ` ORDER BY ${orderBy}`;
+
+    // Pagination
+    baseSql += `  LIMIT ? OFFSET ?`;
+    sqlParams.push(parseInt(limit), offset);
+    
+    // Execute both queries
+    db.query(countSql, sqlParams.slice(0, sqlParams.length - 2), (countErr, countResult) => {
+        if (countErr) {
+            return res.status(500).json({ success: false, message: 'Failed to get product count.', error: countErr });
+        }
+        
+        const totalCount = countResult[0].total;
+
+        db.query(baseSql, sqlParams, (err, products) => {
+            if (err) {
+                return res.status(500).json({ success: false, message: 'Failed to fetch products.', error: err });
+            }
+
+            const formattedProducts = products.map(formatProductData);
+
+            res.json({
+                success: true,
+                products: formattedProducts,
+                pagination: {
+                    total: totalCount,
+                    page: parseInt(page),
+                    limit: parseInt(limit),
+                    totalPages: Math.ceil(totalCount / parseInt(limit)),
+                },
+            });
+        });
+    });
+};
+
 exports.getProductBySlug = (req, res) => {
     const slug = req.params.slug;
     const sql = `
@@ -428,7 +542,7 @@ exports.getSearch = (req, res) => {
                     GROUP_CONCAT(DISTINCT CONCAT(i.id, ':', i.url) SEPARATOR ';') AS images
                 FROM
                     products p
-                LEFT JOIN
+                INNER JOIN
                     categories c ON p.category_id = c.id
                 LEFT JOIN
                     images i ON p.id = i.product_id
@@ -475,7 +589,7 @@ exports.getSearch = (req, res) => {
                     GROUP_CONCAT(DISTINCT CONCAT(i.id, ':', i.url) SEPARATOR ';') AS images
                 FROM
                     products p
-                LEFT JOIN
+                INNER JOIN
                     categories c ON p.category_id = c.id
                 LEFT JOIN
                     images i ON p.id = i.product_id

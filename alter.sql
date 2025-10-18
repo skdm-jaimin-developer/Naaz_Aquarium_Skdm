@@ -32,3 +32,15 @@ WHERE
 
     ALTER TABLE orders
 MODIFY COLUMN delivery_status VARCHAR(30) NULL DEFAULT pending;
+
+
+--third alter 
+
+ALTER TABLE `users` 
+ADD COLUMN `google_id` VARCHAR(255) UNIQUE AFTER `id`;
+
+ALTER TABLE `users` 
+MODIFY COLUMN `mobile` VARCHAR(20) NULL;
+
+ALTER TABLE `users` 
+MODIFY COLUMN `password` VARCHAR(255) NULL;

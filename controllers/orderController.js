@@ -41,59 +41,53 @@ function queryPromise(sql, params) {
 
 
 // Helper function to format order data for consistent API responses
-const formatOrderData = (order) => {
-    // Helper to parse concatenated strings from SQL
-    const parseAggregatedData = (dataString, parser) => {
-        if (!dataString) return [];
-        return dataString.split(';').map(parser);
-    };
-
-    const productParser = (p) => {
-        
-        const parts = p.split('|');
-       
-        const [
-            id, name, description, category_id, no_of_reviews, slug,
-            images, sizeDetails,
-            category_name, category_slug, category_description,
-            quantity , discount
-        ] = parts;
-        console.log(parts) 
-        const [sizeId, sizeName, price, discount_price, stock] = sizeDetails.split(':');
-        console.log(sizeId, sizeName, price, discount_price, stock)
-        return {
-            id: parseInt(id??0),
-            name: name??'',
-            description: description??'',
-            category_id: parseInt(category_id??0),
-            no_of_reviews: parseInt(no_of_reviews??0),
-            slug: slug??'',
-            images: parseAggregatedData(images, (img) => {
-                const [imgId, url] = img.split(':');
-                return {
-                    id: parseInt(imgId??0),
-                    url:getImageUrl(url??'')
-                };
-            }),
-            size: {
-                id: parseInt(sizeId??0),
-                name: sizeName??'',
-                price: parseFloat(price??0),
-                discount_price: parseFloat(discount_price??0),
-                stock: parseInt(stock??0)
-            },
-            quantity: parseInt(quantity??0),
-            discount: discount??0,
-            category: {
-                id: parseInt(category_id??0),
-                name: category_name??0,
-                slug: category_slug??0,
-                description: category_description??0
-            }
-        };
-    };
+const formatProductItem = (item) => {
+    // The only remaining GROUP_CONCAT is for images, so we parse that string
+    const parsedImages = item.images 
+        ? item.images.split(',').map(img => {
+            const [imgId, url] = img.split(':');
+            return {
+                id: parseInt(imgId, 10) || 0,
+                url: getImageUrl(url || '')
+            };
+        })
+        : [];
 
     return {
+        // Product Details
+        id: parseInt(item.product_id, 10) || 0,
+        name: item.product_name || '',
+        description: item.product_description || '',
+        no_of_reviews: parseInt(item.no_of_reviews, 10) || 0,
+        slug: item.slug || '',
+        images: parsedImages,
+
+        // Product Size/Variant
+        size: {
+            id: parseInt(item.size_id, 10) || 0,
+            name: item.size_name || '',
+            price: parseFloat(item.size_price) || 0,
+            discount_price: parseFloat(item.size_discount_price) || 0,
+            stock: parseInt(item.size_stock, 10) || 0
+        },
+
+        // Order Item Details (from order_products)
+        quantity: parseInt(item.quantity, 10) || 0,
+        discount: parseFloat(item.item_discount) || 0,
+
+        // Category Details
+        category: {
+            id: parseInt(item.category_id, 10) || 0,
+            name: item.category_name || '',
+            slug: item.category_slug || '',
+            description: item.category_description || ''
+        }
+    };
+};
+
+const formatOrderData = (order) => {
+    return {
+        // Order Header Data
         id: order.id,
         unique_order_id: order.unique_order_id,
         user_id: order.user_id,
@@ -103,21 +97,27 @@ const formatOrderData = (order) => {
         delivery_status: order.delivery_status,
         payment_mode: order.payment_mode,
         transaction_id: order.transaction_id,
-        subtotal: parseFloat(order.subtotal),
-        tax: parseFloat(order.tax),
-        total: parseFloat(order.total),
-        shipping: parseFloat(order.shipping),
-        discount: parseFloat(order.discount),
-        grand_total: parseFloat(order.grand_total),
+        
+        subtotal: parseFloat(order.subtotal) || 0,
+        tax: parseFloat(order.tax) || 0,
+        total: parseFloat(order.total) || 0,
+        shipping: parseFloat(order.shipping) || 0,
+        discount: parseFloat(order.discount) || 0,
+        grand_total: parseFloat(order.grand_total) || 0,
+        
         invoice_link: getInvoiceUrl(order.invoice_link),
         created_at: order.created_at,
         updated_at: order.updated_at,
+
+        // User Data
         user: {
             id: order.user_id,
             name: order.user_name,
             email: order.user_email,
             mobile: order.user_mobile
         },
+
+        // Address Data
         address: {
             id: order.address_id,
             address1: order.address_line1,
@@ -127,7 +127,9 @@ const formatOrderData = (order) => {
             state: order.address_state,
             pincode: order.address_pincode
         },
-        products: parseAggregatedData(order.products, productParser)
+        
+        // Products Array
+        products: (order?.products || []).map(formatProductItem)
     };
 };
 
@@ -319,71 +321,116 @@ exports.getAllOrders = (req, res) => {
     const limit = parseInt(req.query.limit, 10) || 10;
     const offset = (page - 1) * limit;
 
-    // First query to get the total count of orders
+    // --- Query 1a: Get the total count of orders for pagination ---
     const countSql = 'SELECT COUNT(*) AS totalOrders FROM orders';
+    
     db.query(countSql, (err, countResult) => {
         if (err) {
+            console.error('Error fetching order count:', err);
             return res.status(500).json({
                 success: false,
                 message: 'Failed to fetch order count.',
                 error: err.message
             });
         }
+        
         const totalOrders = countResult[0].totalOrders;
         const totalPages = Math.ceil(totalOrders / limit);
 
-        // Second query to fetch the paginated orders
-        const sql = `
+        // --- Query 1b: Fetch the paginated order headers ---
+        // This query is simplified (no GROUP_CONCAT, no product/size joins)
+        const ordersSql = `
             SELECT
                 o.id, o.unique_order_id, o.user_id, o.address_id, o.status, o.payment_status, o.delivery_status, o.payment_mode, o.transaction_id,
                 o.subtotal, o.tax, o.total, o.invoice_link, o.created_at, o.updated_at,
                 o.shipping , o.discount , o.grand_total , 
                 u.name AS user_name, u.email AS user_email, u.mobile AS user_mobile,
-                a.address1 AS address_line1, a.address2 AS address_line2, a.landmark AS address_landmark, a.city AS address_city, a.state AS address_state, a.pincode AS address_pincode,
-                GROUP_CONCAT(
-                    DISTINCT CONCAT(
-                        p.id, '|', p.name, '|', p.description, '|', p.category_id, '|', p.no_of_reviews, '|', p.slug, '|',
-                        -- FIX: Use IFNULL to ensure the subquery returns an empty string if no images are found
-                        IFNULL(
-                            (SELECT GROUP_CONCAT(CONCAT(id, ':', url) SEPARATOR ',') FROM images WHERE product_id = p.id), 
-                            '' -- Return an empty string if NULL
-                        ), '|',
-                        -- This subquery likely won't be NULL if op.size_id is NOT NULL, but we wrap it for safety
-                        IFNULL(
-                            (SELECT CONCAT(s.id, ':', s.name, ':', s.price, ':', s.discount_price, ':', s.stock) FROM sizes s WHERE s.id = op.size_id), 
-                            ':::' -- Return a string indicating missing size data if NULL
-                        ), '|',
-                        c.name, '|', c.slug, '|', c.description, '|', op.quantity ,'|', op.discount
-                    ) SEPARATOR ';'
-                ) AS products
+                a.address1 AS address_line1, a.address2 AS address_line2, a.landmark AS address_landmark, a.city AS address_city, a.state AS address_state, a.pincode AS address_pincode
             FROM orders o
             JOIN users u ON o.user_id = u.id
             JOIN addresses a ON o.address_id = a.id
-            JOIN order_products op ON o.id = op.order_id
-            JOIN products p ON op.product_id = p.id
-            JOIN categories c ON p.category_id = c.id
-            GROUP BY o.id
             ORDER BY o.created_at DESC
             LIMIT ? OFFSET ?;
         `;
 
-        db.query(sql, [limit, offset], (err, results) => {
-            if (err) return res.status(500).json({
-                success: false,
-                message: 'Failed to fetch orders.',
-                error: err.message
-            });
+        db.query(ordersSql, [limit, offset], (err, orderResults) => {
+            if (err) {
+                console.error('Error fetching paginated orders:', err);
+                return res.status(500).json({
+                    success: false,
+                    message: 'Failed to fetch orders.',
+                    error: err.message
+                });
+            }
 
-            const orders = results.map(formatOrderData);
-            res.json({
-                success: true,
-                orders,
-                pagination: {
-                    totalOrders,
-                    totalPages,
-                    currentPage: page,
-                    limit
+            if (orderResults.length === 0) {
+                 return res.json({
+                    success: true,
+                    orders: [],
+                    pagination: { totalOrders, totalPages, currentPage: page, limit }
+                });
+            }
+
+            // Extract the IDs of the fetched orders to use in the next query's IN clause
+            const orderIds = orderResults.map(o => o.id);
+
+            // --- Query 2: Fetch all products for the retrieved orders ---
+            // We use FIND_IN_SET(op.order_id, ?) instead of IN (?) because the DB driver might handle array placeholders differently
+            const productsSql = `
+                SELECT
+                    op.order_id, op.quantity, op.discount AS item_discount,
+                    p.id AS product_id, p.name AS product_name, p.description AS product_description, p.category_id, p.no_of_reviews, p.slug,
+                    c.name AS category_name, c.slug AS category_slug, c.description AS category_description,
+                    s.id AS size_id, s.name AS size_name, s.price AS size_price, s.discount_price AS size_discount_price, s.stock AS size_stock,
+                    -- Image handling using IFNULL to ensure consistent string output, no GROUP_CONCAT limits here
+                    IFNULL(
+                        (SELECT GROUP_CONCAT(CONCAT(id, ':', url) SEPARATOR ',') FROM images WHERE product_id = p.id),
+                        ''
+                    ) AS images
+                FROM order_products op
+                JOIN products p ON op.product_id = p.id
+                LEFT JOIN sizes s ON op.size_id = s.id
+                JOIN categories c ON p.category_id = c.id
+                WHERE op.order_id IN (?);
+            `;
+            
+            // Execute the products query
+            db.query(productsSql, [orderIds], (err, productResults) => {
+                if (err) {
+                    console.error('Error fetching order products:', err);
+                    return res.status(500).json({ success: false, message: 'Failed to fetch all order products.', error: err.message });
                 }
+
+                // --- Step 3: Programmatically Merge Products into Orders ---
+
+                // Create a map of orderId -> [products] for fast lookup
+                const productsMap = new Map();
+                productResults.forEach(p => {
+                    if (!productsMap.has(p.order_id)) {
+                        productsMap.set(p.order_id, []);
+                    }
+                    productsMap.get(p.order_id).push(p);
+                });
+
+                // Merge products into the order results and format
+                const ordersWithProducts = orderResults.map(order => {
+                    const rawOrderData = {
+                        ...order,
+                        products: productsMap.get(order.id) || []
+                    };
+                    return formatOrderData(rawOrderData);
+                });
+                
+                res.json({
+                    success: true,
+                    orders: ordersWithProducts,
+                    pagination: {
+                        totalOrders,
+                        totalPages,
+                        currentPage: page,
+                        limit
+                    }
+                });
             });
         });
     });
@@ -395,122 +442,185 @@ exports.getOrderById = (req, res) => {
     const {
         id
     } = req.params;
-    const sql = `
+    const orderSql = `
         SELECT
-            o.id, o.unique_order_id, o.user_id, o.address_id, o.status, o.payment_status, o.delivery_status, o.payment_mode, o.transaction_id,
-            o.subtotal, o.tax, o.total, o.invoice_link, o.created_at, o.updated_at,
-            o.shipping , o.discount , o.grand_total , 
+            o.*,
             u.name AS user_name, u.email AS user_email, u.mobile AS user_mobile,
-            a.address1 AS address_line1, a.address2 AS address_line2, a.landmark AS address_landmark, a.city AS address_city, a.state AS address_state, a.pincode AS address_pincode,
-            GROUP_CONCAT(
-                DISTINCT CONCAT(
-                    p.id, '|', p.name, '|', p.description, '|', p.category_id, '|', p.no_of_reviews, '|', p.slug, '|',
-                    -- FIX: Use IFNULL to ensure the subquery returns an empty string if no images are found
-                    IFNULL(
-                        (SELECT GROUP_CONCAT(CONCAT(id, ':', url) SEPARATOR ',') FROM images WHERE product_id = p.id), 
-                        '' -- Return an empty string if NULL
-                    ), '|',
-                    -- This subquery likely won't be NULL if op.size_id is NOT NULL, but we wrap it for safety
-                    IFNULL(
-                        (SELECT CONCAT(s.id, ':', s.name, ':', s.price, ':', s.discount_price, ':', s.stock) FROM sizes s WHERE s.id = op.size_id), 
-                        ':::' -- Return a string indicating missing size data if NULL
-                    ), '|',
-                    c.name, '|', c.slug, '|', c.description, '|', op.quantity ,'|', op.discount
-                ) SEPARATOR ';'
-            ) AS products
+            a.address1 AS address_line1, a.address2 AS address_line2, a.landmark AS address_landmark, a.city AS address_city, a.state AS address_state, a.pincode AS address_pincode
         FROM orders o
         JOIN users u ON o.user_id = u.id
         JOIN addresses a ON o.address_id = a.id
-        JOIN order_products op ON o.id = op.order_id
-        JOIN products p ON op.product_id = p.id
-        JOIN categories c ON p.category_id = c.id
-        WHERE o.unique_order_id = ?
-        GROUP BY o.id;
+        WHERE o.unique_order_id = ?;
     `;
-    db.query(sql, [id], (err, results) => {
-        if (err) return res.status(500).json({
-            success: false,
-            message: 'Failed to fetch order.',
-            error: err.message
-        });
-        if (results.length === 0) return res.status(404).json({
-            success: false,
-            message: 'Order not found.'
-        });
-        const order = formatOrderData(results[0]);
-        res.json({
-            success: true,
-            order
+
+    db.query(orderSql, [id], (err, orderResults) => {
+        if (err) return res.status(500).json({ success: false, message: 'Failed to fetch order header.', error: err.message });
+        if (orderResults.length === 0) return res.status(404).json({ success: false, message: 'Order not found.' });
+
+        // Get the order data and its internal ID
+        const orderData = orderResults[0];
+        const orderId = orderData.id;
+
+        // --- Query 2: Fetch Order Products (Items) ---
+        const productsSql = `
+            SELECT
+                op.order_id, op.quantity, op.discount AS item_discount,
+                p.id AS product_id, p.name AS product_name, p.description AS product_description, p.category_id, p.no_of_reviews, p.slug,
+                c.name AS category_name, c.slug AS category_slug, c.description AS category_description,
+                s.id AS size_id, s.name AS size_name, s.price AS size_price, s.discount_price AS size_discount_price, s.stock AS size_stock,
+                IFNULL(
+                    (SELECT GROUP_CONCAT(CONCAT(id, ':', url) SEPARATOR ',') FROM images WHERE product_id = p.id),
+                    ''
+                ) AS images
+            FROM order_products op
+            JOIN products p ON op.product_id = p.id
+            LEFT JOIN sizes s ON op.size_id = s.id
+            JOIN categories c ON p.category_id = c.id
+            WHERE op.order_id = ?;
+        `;
+        
+        db.query(productsSql, [orderId], (err, productResults) => {
+            if (err) return res.status(500).json({ success: false, message: 'Failed to fetch order products.', error: err.message });
+            
+            // 💡 Handle the case where products are NULL/empty (as you mentioned)
+            if (productResults.length === 0) {
+                 console.warn(`Order ${id} (ID: ${orderId}) found, but has no products in order_products table.`);
+            }
+
+            // Combine the order data and the product list into a single object
+            const finalOrder = {
+                ...orderData,
+                products: productResults
+            };
+            console.log(productResults)
+            // Format and send the response
+            const order = formatOrderData(finalOrder); 
+            
+            res.json({
+                success: true,
+                order
+            });
         });
     });
 };
 
 // --- API Endpoint: Fetch orders by User ID with pagination ---
 exports.getOrdersByUserId = (req, res) => {
-    const {
-        userId
-    } = req.params;
+    const { userId } = req.params;
     // Get page and limit from query parameters with default values
     const page = parseInt(req.query.page, 10) || 1;
     const limit = parseInt(req.query.limit, 10) || 10;
     const offset = (page - 1) * limit;
 
-    // First query to get the total count of orders for the specific user
+    // --- Query 1a: Get the total count of orders for the specific user ---
     const countSql = 'SELECT COUNT(*) AS totalOrders FROM orders WHERE user_id = ?';
+    
     db.query(countSql, [userId], (err, countResult) => {
         if (err) {
+            console.error('Error fetching user order count:', err);
             return res.status(500).json({
                 success: false,
                 message: 'Failed to fetch order count for user.',
                 error: err.message
             });
         }
+        
         const totalOrders = countResult[0].totalOrders;
         const totalPages = Math.ceil(totalOrders / limit);
 
-        // Second query to fetch the paginated orders for the user
-        const sql = `
+        // --- Query 1b: Fetch the paginated order headers for the user ---
+        const ordersSql = `
             SELECT
                 o.id, o.unique_order_id, o.user_id, o.address_id, o.status, o.payment_status, o.delivery_status, o.payment_mode, o.transaction_id,
                 o.subtotal, o.tax, o.total, o.invoice_link, o.created_at, o.updated_at,
                 o.shipping , o.discount , o.grand_total , 
-                u.name AS user_name, u.email AS user_email,u.mobile AS user_mobile,
-                a.address1 AS address_line1, a.address2 AS address_line2, a.landmark AS address_landmark, a.city AS address_city, a.state AS address_state, a.pincode AS address_pincode,
-                GROUP_CONCAT(
-                    DISTINCT CONCAT(
-                        p.id, '|', p.name, '|', p.description, '|', p.category_id, '|', p.no_of_reviews, '|', p.slug, '|',
-                        (SELECT GROUP_CONCAT(CONCAT(id, ':', url) SEPARATOR ',') FROM images WHERE product_id = p.id), '|',
-                        (SELECT CONCAT(s.id, ':', s.name, ':', s.price, ':', s.discount_price, ':', s.stock) FROM sizes s WHERE s.id = op.size_id), '|',
-                        c.name, '|', c.slug, '|', c.description, '|', op.quantity ,'|', op.discount
-                    ) SEPARATOR ';'
-                ) AS products
+                u.name AS user_name, u.email AS user_email, u.mobile AS user_mobile,
+                a.address1 AS address_line1, a.address2 AS address_line2, a.landmark AS address_landmark, a.city AS address_city, a.state AS address_state, a.pincode AS address_pincode
             FROM orders o
             JOIN users u ON o.user_id = u.id
             JOIN addresses a ON o.address_id = a.id
-            JOIN order_products op ON o.id = op.order_id
-            JOIN products p ON op.product_id = p.id
-            JOIN categories c ON p.category_id = c.id
             WHERE o.user_id = ?
-            GROUP BY o.id
             ORDER BY o.created_at DESC
             LIMIT ? OFFSET ?;
         `;
-        db.query(sql, [userId, limit, offset], (err, results) => {
-            if (err) return res.status(500).json({
-                success: false,
-                message: 'Failed to fetch orders.',
-                error: err.message
-            });
-            const orders = results.map(formatOrderData);
-            res.json({
-                success: true,
-                orders,
-                pagination: {
-                    totalOrders,
-                    totalPages,
-                    currentPage: page,
-                    limit
+
+        db.query(ordersSql, [userId, limit, offset], (err, orderResults) => {
+            if (err) {
+                console.error('Error fetching paginated user orders:', err);
+                return res.status(500).json({
+                    success: false,
+                    message: 'Failed to fetch orders.',
+                    error: err.message
+                });
+            }
+
+            if (orderResults.length === 0) {
+                 return res.json({
+                    success: true,
+                    orders: [],
+                    pagination: { totalOrders, totalPages, currentPage: page, limit }
+                });
+            }
+
+            // Extract the IDs of the fetched orders
+            const orderIds = orderResults.map(o => o.id);
+
+            // --- Query 2: Fetch all products for the retrieved orders ---
+            const productsSql = `
+                SELECT
+                    op.order_id, op.quantity, op.discount AS item_discount,
+                    p.id AS product_id, p.name AS product_name, p.description AS product_description, p.category_id, p.no_of_reviews, p.slug,
+                    c.name AS category_name, c.slug AS category_slug, c.description AS category_description,
+                    s.id AS size_id, s.name AS size_name, s.price AS size_price, s.discount_price AS size_discount_price, s.stock AS size_stock,
+                    -- Image handling using IFNULL to ensure consistent string output
+                    IFNULL(
+                        (SELECT GROUP_CONCAT(CONCAT(id, ':', url) SEPARATOR ',') FROM images WHERE product_id = p.id),
+                        ''
+                    ) AS images
+                FROM order_products op
+                JOIN products p ON op.product_id = p.id
+                LEFT JOIN sizes s ON op.size_id = s.id
+                JOIN categories c ON p.category_id = c.id
+                WHERE op.order_id IN (?);
+            `;
+            
+            // Execute the products query
+            db.query(productsSql, [orderIds], (err, productResults) => {
+                if (err) {
+                    console.error('Error fetching order products:', err);
+                    return res.status(500).json({ success: false, message: 'Failed to fetch all order products.', error: err.message });
                 }
+
+                // --- Step 3: Programmatically Merge Products into Orders ---
+
+                // Create a map of orderId -> [products] for fast lookup
+                const productsMap = new Map();
+                productResults.forEach(p => {
+                    if (!productsMap.has(p.order_id)) {
+                        productsMap.set(p.order_id, []);
+                    }
+                    productsMap.get(p.order_id).push(p);
+                });
+
+                // Merge products into the order results and format
+                const ordersWithProducts = orderResults.map(order => {
+                    const rawOrderData = {
+                        ...order,
+                        products: productsMap.get(order.id) || []
+                    };
+                    return formatOrderData(rawOrderData);
+                });
+                
+                res.json({
+                    success: true,
+                    orders: ordersWithProducts,
+                    pagination: {
+                        totalOrders,
+                        totalPages,
+                        currentPage: page,
+                        limit
+                    }
+                });
             });
         });
     });

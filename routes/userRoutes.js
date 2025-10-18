@@ -10,6 +10,7 @@ const adminMiddleware = require('../middleware/adminMiddleware');
 router.use(authMiddleware);
 
 router.get('/', adminMiddleware, usersController.getAllUsers);
+router.get('/stats', adminMiddleware, usersController.getTableCounts);
 router.get('/:id', usersController.getUserById);
 
 module.exports = router;

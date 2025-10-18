@@ -14,6 +14,7 @@ const uploadMiddleware = require('../middleware/uploadMiddleware');
 router.get('/', productController.getAllProducts);
 router.get('/get/:slug', productController.getProductBySlug);
 router.get('/search', productController.getSearch);
+router.get('/admin', productController.getAllProductsadmin);
 
 router.use(authMiddleware);
 // Admin-only Product Routes

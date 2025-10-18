@@ -53,3 +53,41 @@ exports.getUserById = (req, res) => {
         res.status(200).json({message:"User Fetched Successfully",success:true,user:user[0]});
     });
 };
+
+exports.getTableCounts = (req, res) => {
+    // Single SQL query using subqueries to retrieve all counts in one go
+    const sql = `
+        SELECT
+            (SELECT COUNT(*) FROM users) AS userCount,
+            (SELECT COUNT(*) FROM products) AS productCount,
+            (SELECT COUNT(*) FROM orders) AS orderCount,
+            (SELECT COUNT(*) FROM categories) AS categoryCount;
+    `;
+
+    db.query(sql, (err, result) => {
+        if (err) {
+            console.error('Error fetching all table counts:', err);
+            return res.status(500).json({
+                success: false,
+                message: 'Failed to fetch table counts.',
+                error: err.message
+            });
+        }
+
+        // The result is an array with a single object containing all counts
+        const rawCounts = result[0];
+
+        const counts = {
+            users: rawCounts.userCount,
+            products: rawCounts.productCount,
+            orders: rawCounts.orderCount,
+            categories: rawCounts.categoryCount
+        };
+
+        res.json({ 
+            success: true, 
+            message: 'Table counts fetched successfully.',
+            counts 
+        });
+    });
+};
