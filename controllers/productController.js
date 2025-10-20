@@ -61,7 +61,7 @@ const formatProductData = (product) => {
         // [4]: Comma-separated image paths (or null/empty string)
 
         // Process images: Check if parts[4] exists and is not empty
-        const reviewImages = parts[4] 
+        const reviewImages = parts[5] 
             ? parts[5].split(',').map(imagePath => {
                 // Return { url: 'path' } or { url: null } if the path is empty
                 return imagePath 
