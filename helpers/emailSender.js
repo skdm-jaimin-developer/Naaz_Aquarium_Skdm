@@ -1,18 +1,19 @@
 // helpers/emailSender.js
 const nodemailer = require('nodemailer');
 const fs = require('fs');
+require('dotenv').config();
 
 const transporter = nodemailer.createTransport({
     service: 'gmail',
     auth: {
-        user: 'shreekrishnadigitalsolution@gmail.com',
-        pass: 'zkgxscjlcyooxrzj'
+        user: process.env.EMAIL_USER,
+        pass: process.env.EMAIL_PASS
     }
 });
 
 const sendInvoiceEmail = (toEmail, subject, htmlContent, attachmentPath) => {
     const mailOptions = {
-        from: 'shreekrishnadigitalsolution@gmail.com',
+        from: process.env.EMAIL_USER,
         to: toEmail,
         subject: subject,
         html: htmlContent,

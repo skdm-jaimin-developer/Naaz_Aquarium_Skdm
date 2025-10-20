@@ -7,5 +7,7 @@ router.post('/register', authController.registerUser);
 router.post('/login', authController.loginUser);
 router.post('/google-login', authController.googleLogin);
 router.put('/update', authMiddleware,authController.updateProfile);
-
+router.post('/forgot', authController.forgotPassword);
+router.post('/verify-otp', authController.verifyOtp);
+router.post('/reset', authController.resetPassword);
 module.exports = router;

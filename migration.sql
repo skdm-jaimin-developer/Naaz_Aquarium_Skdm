@@ -185,3 +185,10 @@ CREATE TABLE IF NOT EXISTS  review_images (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (review_id) REFERENCES reviews(id) ON DELETE CASCADE
 );
+
+CREATE TABLE IF NOT EXISTS password_resets (
+    user_id INT PRIMARY KEY,
+    otp_hash VARCHAR(255) NOT NULL,
+    expires_at DATETIME NOT NULL,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);

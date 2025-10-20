@@ -275,6 +275,201 @@ exports.createOrder = async (req, res) => {
         const callbackUrl = `${req.protocol}://${req.get('host')}/api/phonepe/callback`;
 
         // 5. Initiate Payment
+        if (paymentMode==='COD') {
+        console.log('COD')
+        const neworderStatus = 'processing'
+        const updateSql = 'UPDATE orders SET  status = ? WHERE unique_order_id = ?';
+
+        await connection.queryPromise(updateSql, [neworderStatus, merchantOrderId])
+
+        const fetchDetailsSql = `
+            SELECT 
+                u.name AS user_name, u.email AS user_email,u.mobile AS user_mobile,
+                a.address1, a.address2, a.landmark, a.city, a.state, a.pincode,
+                o.unique_order_id AS order_id,
+                o.subtotal,
+                    o.tax,
+                    o.total,
+                    o.shipping,
+                    o.discount,
+                    o.grand_total,
+                    o.payment_mode,
+                GROUP_CONCAT(DISTINCT CONCAT(p.name, ':', s.discount_price,':', p.tax, ':', op.quantity, ':',op.discount, ':', s.name ,':', s.length ,':', s.width ,':', s.height ,':', s.weight ,':',s.id) SEPARATOR ';') AS products
+            FROM orders o
+            JOIN users u ON o.user_id = u.id
+            JOIN addresses a ON o.address_id = a.id
+            JOIN order_products op ON o.id = op.order_id
+            JOIN products p ON op.product_id = p.id
+            JOIN sizes s ON op.size_id = s.id
+            WHERE o.unique_order_id = ?
+            GROUP BY o.id;
+        `;
+
+            const results = await connection.queryPromise(fetchDetailsSql, [merchantOrderId]);
+
+            if (!results || results.length === 0) {
+                return res.status(404).send({success:false,message:'Order details not found.', navigate_to : `/failed/${merchantOrderId}`});
+            }
+
+            const details = results[0];
+           
+            const orderInfo = {
+                unique_order_id: details.order_id,
+                subtotal:details.subtotal,
+                tax:details.tax,
+                total:details.total,
+                shipping:details.shipping,
+                discount:details.discount,
+                grand_total:details.grand_total,
+                payment_mode:details.payment_mode
+            };
+            const user = {
+                name: details.user_name,
+                email: details.user_email,
+                phone : details.user_mobile
+            };
+            const address = {
+                address1: details.address1,
+                address2: details.address2,
+                landmark: details.landmark,
+                city: details.city,
+                state: details.state,
+                pincode: details.pincode
+            };
+            const productsForPdf = details.products.split(';').map(p => {
+                const [name, discount_price,tax, quantity,discount, size_name ,length,width,height,weight ,size_id] = p.split(':');
+                return {
+                    name,
+                    price: parseFloat(discount_price),
+                    quantity: parseInt(quantity),
+                    size_name,
+                    discount:parseInt(discount),
+                    tax: parseFloat(tax), // Ensure these are numbers
+                    length: parseFloat(length), // Ensure these are numbers
+                    width: parseFloat(width),
+                    height: parseFloat(height),
+                    weight: parseFloat(weight),
+                    size_id
+                };
+            });
+            const updateStockSql = 'UPDATE sizes SET stock = stock - ? WHERE  id = ?';
+
+            for (const product of productsForPdf) {
+                try {
+                    await connection.queryPromise(updateStockSql, [
+                        product.quantity,     // The amount to subtract (the quantity ordered)
+                        product.size_id
+                    ]);
+                    
+                } catch (stockUpdateError) {
+                    console.error('Stock update failed for product:', product, stockUpdateError);
+                }
+            }
+
+            const fullName = user.name || 'Customer';
+            const nameParts = fullName.split(' ').filter(part => part.length > 0); // Filter empty strings just in case
+            const billingFirstName = nameParts[0] || 'Customer';
+            // 4. Determine the Last Name
+            let billingLastName = 'NA';
+
+            if (nameParts.length > 1) {
+                // If there is more than one part, the last part is the last name
+                billingLastName = nameParts[nameParts.length - 1];
+            } else if (nameParts.length === 1 && nameParts[0] !== 'Customer') {
+                // If there is only one part and it's not the default 'Customer', use it as last name too (or leave as NA)
+                // Common practice is to duplicate the single name if it's the only one present.
+                billingLastName = nameParts[0];
+            }
+            const metrics = calculatePackageMetrics(productsForPdf);
+            const shiprocketPayload = {
+                "order_id": String(orderInfo.unique_order_id),
+                "order_date": new Date().toISOString().slice(0, 19).replace('T', ' '),
+                "pickup_location": "NAAZ AQUARIUM SHOP", // MUST match a location name in your SR account
+                "billing_customer_name": billingFirstName,
+                "billing_last_name":billingLastName,
+                "billing_address": address.address1,
+                "billing_address_2": (address.address2 ? address.address2 + ' ' : '') + (address.landmark || ''),
+                "billing_city": address.city,
+                "billing_pincode": String(address.pincode),
+                "billing_state": address.state,
+                "billing_country": "India",
+                "billing_email": user.email,
+                "billing_phone": user.phone, // Assuming phone is available in details
+                "shipping_is_billing" : true,
+                
+                // Map products for PDF to Shiprocket's required format
+                "order_items": productsForPdf.map(item => ({
+                    "name": item.name,
+                    "sku": `SKU-${item.name.slice(0, 3)}-${merchantOrderId}`, // Generate a SKU or use your internal SKU
+                    "units": item.quantity,
+                    "selling_price": item.price.toFixed(2),
+                    "length": String(item.length),
+                    "breadth": String(item.width),
+                    "height": String(item.height),
+                    "weight": String(item.weight),
+                    "gst_rate":item.tax,
+                    "tax_included":"No",
+                    "hsn": 3303, // Placeholder HSN, replace with actual
+                })),
+                
+                "payment_method": orderInfo.payment_mode || "Prepaid", // COD or Prepaid
+                    "sub_total": Number(orderInfo.subtotal ?? 0).toFixed(2), 
+                "tax": Number(orderInfo.tax ?? 0).toFixed(2),
+                "total": Number(orderInfo.grand_total ?? 0).toFixed(2),
+                "discount": Number(orderInfo.discount ?? 0).toFixed(2),
+                
+                // Ensure metrics helper returns strings, or explicitly cast here
+                "length": String(metrics.finalLength), 
+                "breadth": String(metrics.finalBreadth), 
+                "height": String(metrics.finalHeight), 
+                "weight": String(metrics.totalWeight), 
+            };
+
+            const shipmentResponse = await createShipment(shiprocketPayload)
+
+            try {
+                    // 1. Generate the PDF and get the path. (This is already set up correctly)
+                    const invoicePath = await generatePdfAndSave(orderInfo, productsForPdf, user, address);
+                    
+                    // 2. Extract the file name.
+                    const invoiceFileName = path.basename(invoicePath);
+                    const updateInvoiceLinkSql = 'UPDATE orders SET invoice_link = ? WHERE unique_order_id = ?';
+                    const updateInvoiceAndShipmentLinkSql = 'UPDATE orders SET invoice_link = ? , delivery_status = ? WHERE unique_order_id = ?';
+                    
+                    if (shipmentResponse && shipmentResponse.status == 'NEW') {
+                        console.log("New Status Update " ,shipmentResponse ,shipmentResponse.status)
+                        await connection.queryPromise(updateInvoiceAndShipmentLinkSql, [invoiceFileName,shipmentResponse.status, merchantOrderId]);
+                    }else{
+                        await connection.queryPromise(updateInvoiceLinkSql, [invoiceFileName, merchantOrderId]);
+                    }
+                    // 3. Update the database.
+                    // We await this outside of its own try/catch, so if it fails, the outer block catches the critical error.
+
+                    // 4. Send the invoice email (Non-critical step)
+                    try {
+                        const emailBody = "Dear customer, thank you for your order. Please find your invoice attached.";
+                        await sendInvoiceEmail(user.email, `Invoice for Order #${merchantOrderId}`, emailBody, invoicePath);
+
+                        // If DB update and Email succeed:
+                        
+                    } catch (emailErr) {
+                        // 5. Handle email failure: Log the error, but still return success for the API call.
+                        console.error('Failed to send invoice email:', emailErr);
+                        // The order is valid and the DB is updated, so we report success to the user.
+                        return res.json({ success: true, message: 'Order updated, but the invoice email failed to send.', navigate_to : `/success/${merchantOrderId}` });
+                    }
+                    
+            } catch (criticalError) {
+                // 6. Handle critical errors (PDF generation or Database update failure).
+                console.error('A critical error occurred during order processing:', criticalError);
+                return res.status(500).json({ success: false, message: 'Failed to complete order processing due to an internal error.' , navigate_to : `/failed/${merchantOrderId}`});
+            } 
+                await connection.commitPromise(); // Use the promisified commit
+        
+        // 7. Success Response
+                connection.release();
+                return res.json({ success: true, message: 'Order Created and email sent successfully.' , navigate_to : `/success/${merchantOrderId}`});
+        }else{
         const paymentResponse = await initiatePayment(orderDetails, redirectUrl, callbackUrl); 
 
         // Handle Payment Initiation Error (Pre-Commit Check)
@@ -283,17 +478,17 @@ exports.createOrder = async (req, res) => {
             connection.release();
             return res.status(500).json(paymentResponse); 
         }
-
-        // 6. Commit Transaction
         await connection.commitPromise(); // Use the promisified commit
         
         // 7. Success Response
         connection.release();
         res.json(paymentResponse);
+        }
+        // 6. Commit Transaction
 
     } catch (err) {
         // CENTRALIZED ERROR HANDLING
-        console.error('Order creation failed:', err.message || err);
+        console.error('Order creation failed:', err || err);
 
         // If a connection was established, attempt to roll back and release it
         if (connection && connection.rollbackPromise) {

@@ -52,6 +52,7 @@ const formatProductData = (product) => {
     // ----------------------------------------------------------------
     const reviews = product.reviews ? product.reviews.split(';;').map(reviewString => { // Split by ';;'
         const parts = reviewString.split(':'); // Split individual review by ':'
+        console.log(parts[6])
         
         // Parts Index:
         // [0]: r.id
@@ -61,8 +62,8 @@ const formatProductData = (product) => {
         // [4]: Comma-separated image paths (or null/empty string)
 
         // Process images: Check if parts[4] exists and is not empty
-        const reviewImages = parts[5] 
-            ? parts[5].split(',').map(imagePath => {
+        const reviewImages = parts[6] 
+            ? parts[6].split(',').map(imagePath => {
                 // Return { url: 'path' } or { url: null } if the path is empty
                 return imagePath 
                     ? { url: getImageUrl(imagePath) } 
@@ -143,11 +144,11 @@ exports.getAllProducts = (req, res) => {
 
     // Filter by Price Range
     if (price_min) {
-        whereClauses.push(`s.price >= ?`);
+        whereClauses.push(`s.discount_price >= ?`);
         sqlParams.push(parseFloat(price_min));
     }
     if (price_max) {
-        whereClauses.push(`s.price <= ?`);
+        whereClauses.push(`s.discount_price <= ?`);
         sqlParams.push(parseFloat(price_max));
     }
 
@@ -185,7 +186,7 @@ exports.getAllProducts = (req, res) => {
     if (sort) {
         const [field, order] = sort.split(':');
         if (field === 'price') {
-            orderBy = `MIN(s.price) ${order === 'high-low' ? 'DESC' : 'ASC'}`;
+            orderBy = `MIN(s.discount_price) ${order === 'high-low' ? 'DESC' : 'ASC'}`;
         } else if (field === 'name') {
             orderBy = `p.name ${order === 'high-low' ? 'DESC' : 'ASC'}`;
         }
