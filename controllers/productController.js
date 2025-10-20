@@ -52,32 +52,29 @@ const formatProductData = (product) => {
     // ----------------------------------------------------------------
     const reviews = product.reviews ? product.reviews.split(';;').map(reviewString => { // Split by ';;'
         const parts = reviewString.split(':'); // Split individual review by ':'
-        console.log(parts[6])
         
-        // Parts Index:
-        // [0]: r.id
-        // [1]: r.name
-        // [2]: r.review
-        // [3]: r.rate_stars
-        // [4]: Comma-separated image paths (or null/empty string)
-
-        // Process images: Check if parts[4] exists and is not empty
-        const reviewImages = parts[6] 
-            ? parts[6].split(',').map(imagePath => {
-                // Return { url: 'path' } or { url: null } if the path is empty
-                return imagePath 
-                    ? { url: getImageUrl(imagePath) } 
-                    : { url: null }; 
-            }).filter(img => img.url !== null) // Filter out any entries where the path was empty/null
-            : null; // Set to null if there are no image paths at all
+        // --- Corrected Indices ---
+        const imagePathsString = parts[5]; 
+        console.log('Raw Image Paths String:', imagePathsString); // <--- ADD THIS
+        // Process images: Check if we have a string of paths
+        const reviewImages = imagePathsString 
+            ? imagePathsString.split(',').map(imagePath => {
+                // Ensure the path is not just empty or whitespace
+                return imagePath.trim() 
+                    ? { url: getImageUrl(imagePath.trim()) } 
+                    : null; 
+            }).filter(img => img !== null) // Remove any empty/null results
+            : []; // Default to an empty array
 
         return { 
             id: parseInt(parts[0]), 
             name: parts[1], 
             review: parts[2],
-            created_at: parts[4],
-            rate_stars: parseInt(parts[3]), // New field
-            images: reviewImages // New field: Array of { url: ... } objects or null
+            rate_stars: parseInt(parts[3]),
+            // Correct index for created_at is [4]
+            created_at: parts[4], 
+            // Correct index for image paths is [5]
+            images: reviewImages 
         };
     }) : [];
     // ----------------------------------------------------------------
@@ -348,10 +345,15 @@ exports.getProductBySlug = (req, res) => {
     GROUP_CONCAT(DISTINCT CONCAT(i.id, ':', i.url) SEPARATOR ';') AS images,
     GROUP_CONCAT(DISTINCT CONCAT(s.id, ':', s.name, ':', s.price, ':', s.discount_price, ':', s.stock, ':', s.length, ':', s.width, ':', s.height, ':', s.weight) SEPARATOR ';') AS sizes,
     
-    -- CORRECTED: Removed the extra ':' before the subquery
+    -- 🔑 CORRECTION 1: Use DATE_FORMAT explicitly
     GROUP_CONCAT(
         DISTINCT CONCAT(
-            r.id, ':', r.name, ':', r.review, ':', r.rate_stars, ':', r.created_at, 
+            r.id, ':', 
+            r.name, ':', 
+            r.review, ':', 
+            r.rate_stars, ':', 
+           DATE_FORMAT(r.created_at, '%Y-%m-%d %H-%i-%s'), -- <<< The FIX is here
+            ':', 
             (
                 SELECT GROUP_CONCAT(ri.image_path SEPARATOR ',') 
                 FROM review_images ri 
