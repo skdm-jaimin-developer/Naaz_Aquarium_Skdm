@@ -19,7 +19,11 @@ const slugify = (str) => {
 };
 
 const formatProductData = (product) => {
-    const { category_name, category_slug, category_description,coupons: couponsString, ...rest } = product;
+    const { category_name, category_slug, category_description, coupons: couponsString, ...rest } = product;
+
+    // Helper function (assumed to be available globally or imported)
+    // const getImageUrl = (path) => { ... }; 
+
     const images = product.images ? product.images.split(';').map(img => {
         const parts = img.split(':');
         return {
@@ -30,26 +34,68 @@ const formatProductData = (product) => {
 
     const sizes = product.sizes ? product.sizes.split(';').map(size => {
         const parts = size.split(':');
-        return { id: parseInt(parts[0]), name: parts[1], price: parseFloat(parts[2]), discount_price: parseFloat(parts[3]), stock: parseInt(parts[4]) ,  length:parts[5], width:parts[6], height:parts[7], weight:parts[8] };
+        return { 
+            id: parseInt(parts[0]), 
+            name: parts[1], 
+            price: parseFloat(parts[2]), 
+            discount_price: parseFloat(parts[3]), 
+            stock: parseInt(parts[4]), 
+            length: parts[5], 
+            width: parts[6], 
+            height: parts[7], 
+            weight: parts[8] 
+        };
     }) : [];
-    const reviews = product.reviews ? product.reviews.split(';').map(review => {
-        const parts = review.split(':');
-        return { id: parseInt(parts[0]), name: parts[1], review: parts[2] };
+
+    // ----------------------------------------------------------------
+    // 🌟 UPDATED REVIEWS PARSING LOGIC 🌟
+    // ----------------------------------------------------------------
+    const reviews = product.reviews ? product.reviews.split(';;').map(reviewString => { // Split by ';;'
+        const parts = reviewString.split(':'); // Split individual review by ':'
+        
+        // Parts Index:
+        // [0]: r.id
+        // [1]: r.name
+        // [2]: r.review
+        // [3]: r.rate_stars
+        // [4]: Comma-separated image paths (or null/empty string)
+
+        // Process images: Check if parts[4] exists and is not empty
+        const reviewImages = parts[4] 
+            ? parts[5].split(',').map(imagePath => {
+                // Return { url: 'path' } or { url: null } if the path is empty
+                return imagePath 
+                    ? { url: getImageUrl(imagePath) } 
+                    : { url: null }; 
+            }).filter(img => img.url !== null) // Filter out any entries where the path was empty/null
+            : null; // Set to null if there are no image paths at all
+
+        return { 
+            id: parseInt(parts[0]), 
+            name: parts[1], 
+            review: parts[2],
+            created_at: parts[4],
+            rate_stars: parseInt(parts[3]), // New field
+            images: reviewImages // New field: Array of { url: ... } objects or null
+        };
     }) : [];
-     const coupons = couponsString ? couponsString.split(';').map(coupon => {
+    // ----------------------------------------------------------------
+
+    const coupons = couponsString ? couponsString.split(';').map(coupon => {
         const parts = coupon.split(':');
         return { 
             id: parseInt(parts[0]), 
             code: parts[1], 
-            type: parts[2], // e.g., 'percentage', 'fixed'
+            type: parts[2], 
             value: parseFloat(parts[3]),
             description: parts[4],
-            min_purchase: parseFloat(parts[5]), // Part 5 (min_purchase)
-            max_discount: parseFloat(parts[6]), // Part 6 (max_discount)
-            start_date: parts[7], // Part 7 (start_date)
-            end_date: parts[8]    // Part 8 (end_date)
+            min_purchase: parseFloat(parts[5]), 
+            max_discount: parseFloat(parts[6]), 
+            start_date: parts[7], 
+            end_date: parts[8] 
         };
     }) : [];
+
     return {
         ...rest,
         category: {
@@ -60,7 +106,7 @@ const formatProductData = (product) => {
         },
         images,
         sizes,
-        reviews,
+        reviews, // This now includes rate_stars and images
         coupons
     };
 };
@@ -297,32 +343,46 @@ exports.getProductBySlug = (req, res) => {
     const slug = req.params.slug;
     const sql = `
         SELECT p.*,
-       c.name AS category_name, c.slug AS category_slug, c.description AS category_description,
-       GROUP_CONCAT(DISTINCT CONCAT(i.id, ':', i.url) SEPARATOR ';') AS images,
-       GROUP_CONCAT(DISTINCT CONCAT(s.id, ':', s.name, ':', s.price, ':', s.discount_price, ':', s.stock, ':', s.length, ':', s.width, ':', s.height, ':', s.weight) SEPARATOR ';') AS sizes,
-       GROUP_CONCAT(DISTINCT CONCAT(r.id, ':', r.name, ':', r.review) SEPARATOR ';') AS reviews,
-       GROUP_CONCAT(DISTINCT CONCAT(cou.id, ':', cou.code, ':', cou.type, ':', cou.value, ':', cou.description, ':', cou.min_purchase, ':', cou.max_discount , ':', cou.start_date, ':', cou.end_date) SEPARATOR ';') AS coupons
-        FROM products p
-        LEFT JOIN categories c ON p.category_id = c.id
-        LEFT JOIN images i ON p.id = i.product_id
-        LEFT JOIN sizes s ON p.id = s.product_id
-        LEFT JOIN reviews r ON p.id = r.product_id
-        LEFT JOIN coupons cou
-            -- Join condition: Coupon applies if it's store-wide OR it's specifically linked to the product
-            ON cou.apply_on = 'all' OR cou.id IN (
-                SELECT coupon_id
-                FROM coupon_products
-                WHERE product_id = p.id
+    c.name AS category_name, c.slug AS category_slug, c.description AS category_description,
+    GROUP_CONCAT(DISTINCT CONCAT(i.id, ':', i.url) SEPARATOR ';') AS images,
+    GROUP_CONCAT(DISTINCT CONCAT(s.id, ':', s.name, ':', s.price, ':', s.discount_price, ':', s.stock, ':', s.length, ':', s.width, ':', s.height, ':', s.weight) SEPARATOR ';') AS sizes,
+    
+    -- CORRECTED: Removed the extra ':' before the subquery
+    GROUP_CONCAT(
+        DISTINCT CONCAT(
+            r.id, ':', r.name, ':', r.review, ':', r.rate_stars, ':', r.created_at, 
+            (
+                SELECT GROUP_CONCAT(ri.image_path SEPARATOR ',') 
+                FROM review_images ri 
+                WHERE ri.review_id = r.id
             )
-        WHERE p.slug = ?
-        GROUP BY p.id;
+        ) SEPARATOR ';;' 
+    ) AS reviews, 
 
+    GROUP_CONCAT(DISTINCT CONCAT(cou.id, ':', cou.code, ':', cou.type, ':', cou.value, ':', cou.description, ':', cou.min_purchase, ':', cou.max_discount , ':', cou.start_date, ':', cou.end_date) SEPARATOR ';') AS coupons
+    
+    FROM products p
+    LEFT JOIN categories c ON p.category_id = c.id
+    LEFT JOIN images i ON p.id = i.product_id
+    LEFT JOIN sizes s ON p.id = s.product_id
+    LEFT JOIN reviews r ON p.id = r.product_id
+    
+    LEFT JOIN coupons cou
+        ON cou.apply_on = 'all' OR cou.id IN (
+            SELECT coupon_id
+            FROM coupon_products
+            WHERE product_id = p.id
+        )
+    WHERE p.slug = ?
+    GROUP BY p.id;
     `;
 
     db.query(sql, [slug], (err, results) => {
         if (err) return res.status(500).json({ success: false, message: 'Failed to fetch product.', error: err });
         if (results.length === 0) return res.status(404).json({ success: false, message: 'Product not found.' });
-        const formattedProduct = formatProductData(results[0]);
+        
+        // You MUST update your formatProductData function to parse the new structure
+        const formattedProduct = formatProductData(results[0]); 
 
         res.json({ success: true, product: formattedProduct });
     });

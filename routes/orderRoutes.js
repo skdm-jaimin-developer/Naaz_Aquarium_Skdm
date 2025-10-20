@@ -11,6 +11,7 @@ router.use(authMiddleware);
 
 // Create an order (now requires authentication)
 router.post('/', orderController.createOrder);
+router.post('/createShipment', orderController.createShipment);
 
 // Fetch an order by its ID (now requires authentication)
 router.get('/:id', orderController.getOrderById);

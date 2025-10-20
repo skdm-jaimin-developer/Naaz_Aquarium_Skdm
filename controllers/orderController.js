@@ -896,3 +896,173 @@ exports.status = async (req, res) => {
             return res.status(500).send({success:false,message:'Processing Error'});
         }
 };
+
+exports.createShipment = async (req , res) => {
+    try {
+        const merchantOrderId = req.body.orderId;
+
+        if (!merchantOrderId) {
+            return res.status(400).json({ success: false, message: 'Missing Order ID.' });
+        }
+        const payment_status = await queryPromise(`SELECT payment_status from orders where unique_order_id = ? `,[merchantOrderId] )
+
+        if (!payment_status || payment_status.length === 0) {
+            return res.status(404).send({success:false,message:'Order details not found.'});
+        }
+
+        if (payment_status[0].payment_status !== 'paid') {
+            return res.status(400).send({success:false,message:'Order Not  paid  .'});
+        }
+
+         const fetchDetailsSql = `
+            SELECT 
+                u.name AS user_name, u.email AS user_email,u.mobile AS user_mobile,
+                a.address1, a.address2, a.landmark, a.city, a.state, a.pincode,
+                o.unique_order_id AS order_id,
+                o.subtotal,
+                    o.tax,
+                    o.total,
+                    o.shipping,
+                    o.discount,
+                    o.grand_total,
+                    o.payment_mode,
+                GROUP_CONCAT(DISTINCT CONCAT(p.name, ':', s.discount_price,':', p.tax, ':', op.quantity, ':',op.discount, ':', s.name ,':', s.length ,':', s.width ,':', s.height ,':', s.weight ,':',s.id) SEPARATOR ';') AS products
+            FROM orders o
+            JOIN users u ON o.user_id = u.id
+            JOIN addresses a ON o.address_id = a.id
+            JOIN order_products op ON o.id = op.order_id
+            JOIN products p ON op.product_id = p.id
+            JOIN sizes s ON op.size_id = s.id
+            WHERE o.unique_order_id = ?
+            GROUP BY o.id;
+        `;
+        
+            const results = await queryPromise(fetchDetailsSql, [merchantOrderId]);
+
+            if (!results || results.length === 0) {
+                return res.status(404).send({success:false,message:'Order details not found.', navigate_to : `/failed/${merchantOrderId}`});
+            }
+
+            const details = results[0];
+            
+        
+    // 5. Generate PDF, save it, update the connection with the file name, and send the email
+            
+            const orderInfo = {
+                unique_order_id: details.order_id,
+                subtotal:details.subtotal,
+                tax:details.tax,
+                total:details.total,
+                shipping:details.shipping,
+                discount:details.discount,
+                grand_total:details.grand_total,
+                payment_mode:details.payment_mode
+            };
+            const user = {
+                name: details.user_name,
+                email: details.user_email,
+                phone : details.user_mobile
+            };
+            const address = {
+                address1: details.address1,
+                address2: details.address2,
+                landmark: details.landmark,
+                city: details.city,
+                state: details.state,
+                pincode: details.pincode
+            };
+            const productsForPdf = details.products.split(';').map(p => {
+                const [name, discount_price,tax, quantity,discount, size_name ,length,width,height,weight ,size_id] = p.split(':');
+                return {
+                    name,
+                    price: parseFloat(discount_price),
+                    quantity: parseInt(quantity),
+                    size_name,
+                    discount:parseInt(discount),
+                    tax: parseFloat(tax), // Ensure these are numbers
+                    length: parseFloat(length), // Ensure these are numbers
+                    width: parseFloat(width),
+                    height: parseFloat(height),
+                    weight: parseFloat(weight),
+                    size_id
+                };
+            });
+
+            const fullName = user.name || 'Customer';
+            const nameParts = fullName.split(' ').filter(part => part.length > 0); // Filter empty strings just in case
+            const billingFirstName = nameParts[0] || 'Customer';
+            // 4. Determine the Last Name
+            let billingLastName = 'NA';
+
+            if (nameParts.length > 1) {
+                // If there is more than one part, the last part is the last name
+                billingLastName = nameParts[nameParts.length - 1];
+            } else if (nameParts.length === 1 && nameParts[0] !== 'Customer') {
+                // If there is only one part and it's not the default 'Customer', use it as last name too (or leave as NA)
+                // Common practice is to duplicate the single name if it's the only one present.
+                billingLastName = nameParts[0];
+            }
+            const metrics = calculatePackageMetrics(productsForPdf);
+            const shiprocketPayload = {
+                "order_id": String(orderInfo.unique_order_id),
+                "order_date": new Date().toISOString().slice(0, 19).replace('T', ' '),
+                "pickup_location": "NAAZ AQUARIUM SHOP", // MUST match a location name in your SR account
+                "billing_customer_name": billingFirstName,
+                "billing_last_name":billingLastName,
+                "billing_address": address.address1,
+                "billing_address_2": (address.address2 ? address.address2 + ' ' : '') + (address.landmark || ''),
+                "billing_city": address.city,
+                "billing_pincode": String(address.pincode),
+                "billing_state": address.state,
+                "billing_country": "India",
+                "billing_email": user.email,
+                "billing_phone": user.phone, // Assuming phone is available in details
+                "shipping_is_billing" : true,
+                
+                // Map products for PDF to Shiprocket's required format
+                "order_items": productsForPdf.map(item => ({
+                    "name": item.name,
+                    "sku": `SKU-${item.name.slice(0, 3)}-${merchantOrderId}`, // Generate a SKU or use your internal SKU
+                    "units": item.quantity,
+                    "selling_price": item.price.toFixed(2),
+                    "length": String(item.length),
+                    "breadth": String(item.width),
+                    "height": String(item.height),
+                    "weight": String(item.weight),
+                    "gst_rate":item.tax,
+                    "tax_included":"No",
+                    "hsn": 3303, // Placeholder HSN, replace with actual
+                })),
+                
+                "payment_method": orderInfo.payment_mode || "Prepaid", // COD or Prepaid
+                    "sub_total": Number(orderInfo.subtotal ?? 0).toFixed(2), 
+                "tax": Number(orderInfo.tax ?? 0).toFixed(2),
+                "total": Number(orderInfo.grand_total ?? 0).toFixed(2),
+                "discount": Number(orderInfo.discount ?? 0).toFixed(2),
+                
+                // Ensure metrics helper returns strings, or explicitly cast here
+                "length": String(metrics.finalLength), 
+                "breadth": String(metrics.finalBreadth), 
+                "height": String(metrics.finalHeight), 
+                "weight": String(metrics.totalWeight), 
+            };
+
+            const shipmentResponse = await createShipment(shiprocketPayload)
+
+            if (shipmentResponse && shipmentResponse.status == 'NEW') {
+                const updateShipment = 'UPDATE orders SET  delivery_status = ? WHERE unique_order_id = ?';
+                await queryPromise(updateShipment, [shipmentResponse.status, merchantOrderId]);
+
+                return res.json({ success: true, message: 'Shiprocket order created Successfully ' });
+            }else{
+                return res.status(500).send({success:false,message:shipmentResponse,});
+            }
+
+
+    }catch (error) {
+            console.error('Post-Payment Processing Error:', error);
+            // In a real app, log the error and potentially use a payment status check API
+            // or a retry mechanism for your business logic.
+            return res.status(500).send({success:false,message:'Processing Error'});
+    }
+}

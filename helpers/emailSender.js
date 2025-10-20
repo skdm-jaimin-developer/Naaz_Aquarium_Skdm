@@ -5,14 +5,14 @@ const fs = require('fs');
 const transporter = nodemailer.createTransport({
     service: 'gmail',
     auth: {
-        user: 'skdmlead@gmail.com',
-        pass: 'rbdosodkvcojpexy'
+        user: 'shreekrishnadigitalsolution@gmail.com',
+        pass: 'zkgxscjlcyooxrzj'
     }
 });
 
 const sendInvoiceEmail = (toEmail, subject, htmlContent, attachmentPath) => {
     const mailOptions = {
-        from: 'skdmlead@gmail.com',
+        from: 'shreekrishnadigitalsolution@gmail.com',
         to: toEmail,
         subject: subject,
         html: htmlContent,

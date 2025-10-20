@@ -57,6 +57,7 @@ async function createShipment(srOrderPayload) {
 
     } catch (error) {
         console.error('External API Integration Error:', error.response?.data?error.response.data:error);
+        return error.response?.data?error.response.data:error
         // throw error;
     }
 }

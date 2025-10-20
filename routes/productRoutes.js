@@ -16,7 +16,11 @@ router.get('/get/:slug', productController.getProductBySlug);
 router.get('/search', productController.getSearch);
 router.get('/admin', productController.getAllProductsadmin);
 
+
 router.use(authMiddleware);
+router.post('/:productId/reviews',uploadMiddleware, reviewController.addReview);
+router.get('/:productId/reviews', reviewController.getReviewsByProductId);
+
 // Admin-only Product Routes
 router.use(adminMiddleware);
 router.post('/', uploadMiddleware, productController.createProduct);
@@ -34,8 +38,7 @@ router.delete('/sizes/:sizeId', sizeController.deleteSize);
 router.get('/:productId/sizes', sizeController.getSizesByProductId);
 
 // Reviews CRUD
-router.post('/:productId/reviews', reviewController.addReview);
-router.get('/:productId/reviews', reviewController.getReviewsByProductId);
+
 router.delete('/reviews/:reviewId', reviewController.deleteReview);
 
 module.exports = router;
