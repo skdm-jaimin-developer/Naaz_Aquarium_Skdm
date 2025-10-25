@@ -11,7 +11,7 @@ const generatePdfAndSave = async (order, products, user, address) => {
         });
 
         // --- Configuration ---
-        const PRIMARY_COLOR = '#007bff'; 
+        const PRIMARY_COLOR = '#32307B'; 
         const SECONDARY_COLOR = '#495057'; 
         const BORDER_COLOR = '#E9ECEF'; 
 
@@ -20,8 +20,11 @@ const generatePdfAndSave = async (order, products, user, address) => {
         const FONT_ITALIC = 'Helvetica-Oblique';
         
         const PADDING_X = 50;
-        const CONTENT_WIDTH = 500;
+        const CONTENT_WIDTH = doc.page.width - 2 * PADDING_X;
         const startX = PADDING_X;
+        
+        const STORE_IMAGE_PATH = path.join(__dirname, '..', 'assets', '2.png');
+        const STORE_IMAGE_PATH_FOOTER = path.join(__dirname, '..', 'assets', '3.png');
 
         const fileName = `invoice_${order.unique_order_id}.pdf`;
         const filePath = path.join(__dirname, '..', 'invoices', fileName);
@@ -36,34 +39,39 @@ const generatePdfAndSave = async (order, products, user, address) => {
 
         // --- Header Section ---
         
-        // Store Info
-        doc.fillColor(PRIMARY_COLOR).font(FONT_BOLD).fontSize(16).text('E-COMMERCE STORE', startX, 50);
-        doc.fillColor(SECONDARY_COLOR).font(FONT_NORMAL).fontSize(9);
-        doc.text('123 Modern Avenue, Suite 400', startX, 70);
-        doc.text('Cityville, State, 12345 | contact@store.com', startX, 85);
+        const imageStartY = 50;
+        try {
+            doc.image(STORE_IMAGE_PATH, startX, imageStartY, {
+                fit: [CONTENT_WIDTH, 10000],
+                align: 'center',
+                valign: 'top'
+            });
+        } catch (error) {
+            console.error('Error adding image:', error.message);
+        }
 
-        // Invoice Heading
-        doc.fillColor(PRIMARY_COLOR).font(FONT_BOLD).fontSize(28).text('INVOICE', startX, 50, { align: 'right' });
+        const titleY = (doc.y > imageStartY) ? doc.y + 10 : imageStartY + 100;
+
         doc.fillColor(SECONDARY_COLOR).font(FONT_NORMAL).fontSize(10);
-        doc.text(`Invoice No: ${order.unique_order_id}`, startX, 85, { align: 'right' });
-        doc.text(`Date: ${new Date().toLocaleDateString('en-US')}`, startX, 100, { align: 'right' });
+        doc.text(`Invoice No: ${order.unique_order_id}`, startX, titleY + 35, { align: 'right' });
+        doc.text(`Date: ${new Date().toLocaleDateString('en-US')}`, startX, titleY + 50, { align: 'right' });
 
-        doc.moveDown(4.5);
+        const nextContentY = Math.max(doc.y, titleY + 65);
+
+        // --- FIX: Use a more reliable way to move Y ---
+        doc.y = nextContentY; 
         drawHorizontalLine(doc.y);
 
         // --- Customer and Billing Details ---
         doc.moveDown(1);
         const customerDetailsY = doc.y;
 
-        // BILL TO Column
         doc.font(FONT_BOLD).fontSize(10).fillColor(PRIMARY_COLOR).text('BILL TO:', startX, customerDetailsY);
         doc.font(FONT_NORMAL).fontSize(10).fillColor(SECONDARY_COLOR);
         doc.text(`${user.name}`, startX, customerDetailsY + 15);
         doc.text(`${user.email}`, startX, customerDetailsY + 30);
         doc.text(`${user.phone || ''}`, startX, customerDetailsY + 45);
 
-
-        // SHIP TO Column (Offset by half the width)
         const shipToX = startX + CONTENT_WIDTH / 2;
         doc.font(FONT_BOLD).fontSize(10).fillColor(PRIMARY_COLOR).text('SHIP TO:', shipToX, customerDetailsY);
         doc.font(FONT_NORMAL).fontSize(10).fillColor(SECONDARY_COLOR);
@@ -74,131 +82,192 @@ const generatePdfAndSave = async (order, products, user, address) => {
         } else {
             doc.text(`${address.city}, ${address.state} ${address.pincode}`, shipToX, customerDetailsY + 30);
         }
+        
+        // --- FIX: Use a more reliable way to move Y ---
+        // Set doc.y to be the max height of either column
+        const billToHeight = customerDetailsY + 60; // 45 (last item) + 15 padding
+        const shipToHeight = doc.y; // doc.y was updated by the last text() call
+        doc.y = Math.max(billToHeight, shipToHeight) + 15;
 
-        doc.moveDown(5); 
 
         // --- Product Table ---
         const tableTop = doc.y;
         
-        // --- Adjusted Column Positions for More Item Space ---
-        // Item column width is now ~200 points.
+        const itemWidth = 210;
+        const qtyWidth = 40;
+        const priceWidth = 85;
+        const discountWidth = 85;
+        const totalWidth = 80; 
+
         const cols = {
             item: startX,
-            qty: startX + 220,         // Start Qty at 220
-            price: startX + 280,       // Start Price at 280
-            discount: startX + 370,    // Start Discount at 370
-            total: startX + 460        // Start Line Total at 460
+            qty: startX + itemWidth,
+            price: startX + itemWidth + qtyWidth,
+            discount: startX + itemWidth + qtyWidth + priceWidth,
+            total: startX + itemWidth + qtyWidth + priceWidth + discountWidth
         };
-        const PRICE_COL_WIDTH = 80; // Width for price/total columns
+        
+        // --- NEW: Helper function to draw the table header ---
+        const drawTableHeader = (y) => {
+            doc.rect(startX, y, CONTENT_WIDTH, 25).fill(PRIMARY_COLOR);
+            doc.fillColor('#FFFFFF').font(FONT_BOLD).fontSize(10)
+               .text('Item', cols.item + 5, y + 8, { width: itemWidth - 10 })
+               .text('Qty', cols.qty, y + 8, { width: qtyWidth, align: 'left' })
+               .text('Unit Price', cols.price, y + 8, { width: priceWidth, align: 'left' })
+               .text('Discount', cols.discount, y + 8, { width: discountWidth, align: 'left' }) 
+               .text('Line Total', cols.total, y + 8, { width: totalWidth - 5, align: 'right' });
+            // Return the Y position *after* the header
+            return y + 35; 
+        };
 
-        // Table Header 
-        doc.rect(startX, tableTop, CONTENT_WIDTH, 25).fill(PRIMARY_COLOR);
-        doc.fillColor('#FFFFFF').font(FONT_BOLD).fontSize(10)
-            .text('Item', cols.item + 5, tableTop + 8)
-            .text('Qty', cols.qty, tableTop + 8)
-            .text('Unit Price', cols.price, tableTop + 8)
-            .text('Discount', cols.discount, tableTop + 8) 
-            .text('Line Total', cols.total, tableTop + 8, { align: 'right', width: PRICE_COL_WIDTH }); // Use width for right-aligned text
-
-        let currentY = tableTop + 35;
+        // --- NEW: Draw the first header ---
+        let currentY = drawTableHeader(tableTop);
+        
         doc.font(FONT_NORMAL).fontSize(9).fillColor(SECONDARY_COLOR);
+
+        // --- NEW: Define page bottom margin ---
+        // We leave space for the footer (100) and totals (approx 160)
+        const pageBreakY = doc.page.height - doc.page.margins.bottom - 260; 
+        const minRowHeight = 25;
 
         // Product rows
         products.forEach(p => {
             const lineTotal = (p.price * p.quantity) - (p.discount || 0);
             
-            // Item Name (Use a width limit for wrapping/clipping)
-            doc.font(FONT_NORMAL).fontSize(9);
+            // --- NEW: Estimate row height *before* drawing ---
             const itemName = `${p.name}`;
-            const sizeName = `(${p.size_name})`;
+            const itemHeightEstimate = doc.font(FONT_NORMAL).fontSize(9).heightOfString(itemName, { 
+                width: itemWidth - 10, 
+                lineBreak: true 
+            });
+            const sizeHeightEstimate = doc.font(FONT_ITALIC).fontSize(8).heightOfString(`(${p.size_name})`);
+            // Estimate height based on item/size, but use minRowHeight as a floor
+            const estimatedRowHeight = Math.max(itemHeightEstimate + sizeHeightEstimate, minRowHeight) + 10; // +10 padding
 
-            // Print item name, allowing it to take two lines if necessary (width: 200)
-            doc.text(itemName, cols.item + 5, currentY, { width: 200, lineBreak: true });
+            // --- NEW: Page Break Check ---
+            if (currentY + estimatedRowHeight > pageBreakY) {
+                doc.addPage();
+                
+                // Redraw header at the top of the new page
+                const newTableTop = doc.page.margins.top;
+                currentY = drawTableHeader(newTableTop);
+                
+                // Reset font/color for the new page's rows
+                doc.font(FONT_NORMAL).fontSize(9).fillColor(SECONDARY_COLOR);
+            }
             
-            // Determine the Y position for the next elements
-            let nextElementY = doc.y; // The Y position after the item name finished printing
+            const rowStartY = currentY;
 
-            // Print variant name
-            doc.font(FONT_ITALIC).fontSize(8).text(sizeName, cols.item + 5, nextElementY);
-            
-            // Reset Y position for all fixed-position columns
-            // Use the starting Y of the row (currentY)
+            // Draw the other columns
             doc.font(FONT_NORMAL).fontSize(9)
-                .text(p.quantity, cols.qty, currentY)
-                .text(`Rs. ${p.price.toFixed(2)}`, cols.price, currentY, { width: PRICE_COL_WIDTH, align: 'left' })
-                .text(`Rs. ${(p.discount || 0).toFixed(2)}`, cols.discount, currentY, { width: PRICE_COL_WIDTH, align: 'left' })
-                .text(`Rs. ${lineTotal.toFixed(2)}`, cols.total, currentY, { width: PRICE_COL_WIDTH, align: 'right' });
+               .text(p.quantity, cols.qty, rowStartY, { width: qtyWidth, align: 'left' })
+               .text(`Rs. ${p.price.toFixed(2)}`, cols.price, rowStartY, { width: priceWidth, align: 'left' })
+               .text(`Rs. ${(p.discount || 0).toFixed(2)}`, cols.discount, rowStartY, { width: discountWidth, align: 'left' })
+               .text(`Rs. ${lineTotal.toFixed(2)}`, cols.total, rowStartY, { width: totalWidth - 5, align: 'right' });
+
+            // Draw the (potentially multi-line) item name
+            doc.font(FONT_NORMAL).fontSize(9);
+            doc.text(itemName, cols.item + 5, rowStartY, { 
+                width: itemWidth - 10, 
+                lineBreak: true 
+            });
             
-            // Advance Y position based on the tallest item (Item name/variant)
-            // Use Math.max to ensure enough vertical space for the potentially long item name
-            const spaceNeeded = (doc.y - currentY) > 20 ? (doc.y - currentY) : 30;
-            currentY += spaceNeeded + 5; 
+            // Draw the variant name
+            doc.font(FONT_ITALIC).fontSize(8).text(`(${p.size_name})`, cols.item + 5, doc.y);
+
+            // Calculate the actual height
+            const actualItemHeight = doc.y - rowStartY;
+            const rowHeight = Math.max(actualItemHeight, minRowHeight);
+
+            // Advance currentY for the next row
+            currentY += rowHeight + 10; // Add 10 points of padding
         });
         
-        doc.moveDown(1);
+        // Ensure we are below the last item
+        currentY = Math.max(currentY, doc.y + 10);
+
+        // --- NEW: Check if Totals section will fit ---
+        const totalsHeight = 160; // 6 lines * 18 + 25 box + padding
+        const footerLineY = doc.page.height - 100; // Absolute Y of footer line
+
+        if (currentY + totalsHeight > footerLineY) {
+            doc.addPage();
+            currentY = doc.page.margins.top; // Start at top of new page
+        }
+        
         drawHorizontalLine(currentY); 
 
         // --- Totals Section (Right Aligned) ---
         const totalsY = currentY + 20;
         
-        // Adjusted X positions for Totals to prevent overlap
-        const totalColX = startX + 300; // Label column starts further right
-        const valueColX = startX + 410; // Value column starts further right
-        const TOTALS_COL_WIDTH = 140; // Total width for value column
+        const totalLabelWidth = 120;
+        const totalValueWidth = 150;
+        const totalValueX = startX + CONTENT_WIDTH - totalValueWidth;
+        const totalLabelX = totalValueX - totalLabelWidth;
 
         let runningY = totalsY;
 
         const totalStyles = (label, value, isBold = false, color = SECONDARY_COLOR, size = 10) => {
             doc.fillColor(color).font(isBold ? FONT_BOLD : FONT_NORMAL).fontSize(size);
-            // Label is left-aligned in its column
-            doc.text(label, totalColX, runningY, { width: 100, align: 'left' });
-            // Value is right-aligned in its column
-            doc.text(`Rs. ${value.toFixed(2)}`, valueColX, runningY, { width: TOTALS_COL_WIDTH - 10, align: 'right' });
-            runningY += 18; // Increased spacing for totals
+            doc.text(label, totalLabelX, runningY, { 
+                width: totalLabelWidth, 
+                align: 'left' 
+            });
+            doc.text(`Rs. ${value.toFixed(2)}`, totalValueX, runningY, { 
+                width: totalValueWidth, 
+                align: 'right' 
+            });
+            runningY += 18; 
         };
         
-        // Calculate the actual values (using provided order structure)
         const subtotal = order.subtotal || products.reduce((sum, p) => sum + (p.price * p.quantity), 0);
         const totalDiscount = order.discount || 0; 
         const shipping = order.shipping || 0;
         const tax = order.tax || 0;
         
-        // Calculations
         const netTotal = subtotal - totalDiscount;
         const grandTotal = netTotal + shipping + tax;
         
-        // Totals Breakdown
         totalStyles('Subtotal:', subtotal);
         totalStyles('Discount:', -totalDiscount, false, '#dc3545'); 
         totalStyles('Net Total:', netTotal, true, SECONDARY_COLOR, 10);
         totalStyles('Shipping:', shipping);
         totalStyles('Tax:', tax);
         
-        // Grand Total Box
-        const grandTotalBoxX = totalColX - 5;
-        const grandTotalBoxWidth = CONTENT_WIDTH - grandTotalBoxX + startX;
+        const grandTotalBoxX = totalLabelX - 5; 
+        const grandTotalBoxWidth = totalLabelWidth + totalValueWidth + 10; 
 
         doc.rect(grandTotalBoxX, runningY + 5, grandTotalBoxWidth, 25).fill(PRIMARY_COLOR);
         doc.fillColor('#FFFFFF').font(FONT_BOLD).fontSize(14)
-            .text('GRAND TOTAL:', totalColX, runningY + 12)
-            .text(`Rs. ${grandTotal.toFixed(2)}`, valueColX, runningY + 12, { width: TOTALS_COL_WIDTH - 10, align: 'right' });
+           .text('GRAND TOTAL:', totalLabelX, runningY + 12, {
+               width: totalLabelWidth,
+               align: 'left'
+           })
+           .text(`Rs. ${grandTotal.toFixed(2)}`, totalValueX, runningY + 12, { 
+               width: totalValueWidth, 
+               align: 'right' 
+           });
 
-        runningY += 40; 
+        runningY += 40;
 
-        // --- Payment Status & Footer ---
-        drawHorizontalLine(doc.page.height - 100);
-        const footerY = doc.page.height - 90;
+        // --- Footer ---
+        // This draws at the bottom of the *current* page (which is now the last page)
+        const footerLineYa = doc.page.height - doc.page.margins.bottom - 80; 
+        drawHorizontalLine(footerLineYa);
+        const footerY = footerLineYa + 10;
 
-        doc.fillColor(SECONDARY_COLOR).font(FONT_BOLD).fontSize(10);
-        doc.text('PAYMENT STATUS:', startX, footerY);
-        
-        const statusText = order.payment_status?.toUpperCase() || 'PENDING';
-        const statusColor = statusText === 'PAID' ? '#28a745' : '#ffc107'; 
-        
-        doc.rect(startX + 100, footerY - 2, 70, 15).fill(statusColor);
-        doc.fillColor('#FFFFFF').font(FONT_BOLD).fontSize(10).text(statusText, startX + 105, footerY + 1);
-
-        doc.fillColor('#AAAAAA').fontSize(8).font(FONT_ITALIC).text('Thank you for your order! All prices are in INR (₹).', startX, footerY + 25, { align: 'center', width: CONTENT_WIDTH });
+        try {
+            
+            doc.image(STORE_IMAGE_PATH_FOOTER, startX, footerY, {
+                fit: [CONTENT_WIDTH, 10000],
+                align: 'center',
+                valign: 'top'
+            });
+        } catch (error) {
+            // 🚩 IMPORTANT: Check your terminal for this error! 
+            // If the path is wrong or the image file is corrupted, the footer won't show.
+            console.log('Error adding footer image:', error.message);
+        }
 
         doc.end();
 
@@ -206,7 +275,6 @@ const generatePdfAndSave = async (order, products, user, address) => {
         stream.on('error', reject);
     });
 };
-
 
 
 module.exports = { generatePdfAndSave };
