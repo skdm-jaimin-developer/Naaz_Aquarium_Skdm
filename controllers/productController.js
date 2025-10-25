@@ -110,9 +110,16 @@ const formatProductData = (product) => {
 };
 
 exports.getAllProducts = (req, res) => {
+    // 1. Destructure and Prepare Pagination/Filtering Variables
     const { page = 1, limit = 10, sort, price_min, price_max, size_min, size_max, category_ids } = req.query;
     const offset = (parseInt(page) - 1) * parseInt(limit);
 
+    const whereClauses = [];
+    const sqlParams = [];
+
+    // 2. Define Base SQL Strings
+    
+    // SQL for fetching the product data with aggregation
     let baseSql = `
         SELECT p.*,
                c.name AS category_name, c.slug AS category_slug, c.description AS category_description,
@@ -123,21 +130,18 @@ exports.getAllProducts = (req, res) => {
         INNER JOIN categories c ON p.category_id = c.id
         LEFT JOIN images i ON p.id = i.product_id
         LEFT JOIN reviews r ON p.id = r.product_id
-        
+        INNER JOIN sizes s ON p.id = s.product_id  -- 💡 Always INNER JOIN sizes for filtering logic
     `;
-    let countSql = `SELECT COUNT(DISTINCT p.id) AS total FROM products p`;
+    
+    // Base query used inside a subquery to count the DISTINCT, filtered products
+    let countBaseQuery = `
+        SELECT p.id
+        FROM products p
+        INNER JOIN sizes s ON p.id = s.product_id
+    `;
 
-    const whereClauses = [];
-    const sqlParams = [];
 
-    // Check if we need to join the sizes table
-    const needsSizeJoin = price_min || price_max || size_min || size_max || sort === 'price:low-high' || sort === 'price:high-low';
-    if (needsSizeJoin) {
-        baseSql += ` JOIN sizes s ON p.id = s.product_id`;
-        countSql += ` JOIN sizes s ON p.id = s.product_id`;
-    } else {
-        baseSql += ` LEFT JOIN sizes s ON p.id = s.product_id`;
-    }
+    // 3. Construct WHERE Clauses (Filters)
 
     // Filter by Price Range
     if (price_min) {
@@ -168,21 +172,36 @@ exports.getAllProducts = (req, res) => {
         }
     }
     
-    // Construct WHERE clause for both queries
+    // Construct WHERE clause string for both queries
     if (whereClauses.length > 0) {
         const whereClauseString = ` WHERE ` + whereClauses.join(' AND ');
         baseSql += whereClauseString;
-        countSql += whereClauseString;
+        countBaseQuery += whereClauseString;
     }
     
-    // Grouping
+    // 4. Grouping and Stock Filtering (HAVING clause)
+    
+    // Apply Grouping
     baseSql += ` GROUP BY p.id`;
 
-    // Sorting
+    // Apply the Zero Stock Filter
+    baseSql += ` HAVING MIN(s.stock) > 0`;
+
+    // 5. Construct Final Count Query
+    
+    // Apply Grouping and Having to the count base query to select only valid product IDs
+    countBaseQuery += ` GROUP BY p.id HAVING MIN(s.stock) > 0`; 
+    
+    // Wrap the result to get the total count of valid product IDs
+    const countSql = `SELECT COUNT(*) AS total FROM (${countBaseQuery}) AS subquery_count`;
+
+
+    // 6. Sorting
     let orderBy = 'p.created_at DESC';
     if (sort) {
         const [field, order] = sort.split(':');
         if (field === 'price') {
+            // Sort by the minimum discount price across all sizes of a product
             orderBy = `MIN(s.discount_price) ${order === 'high-low' ? 'DESC' : 'ASC'}`;
         } else if (field === 'name') {
             orderBy = `p.name ${order === 'high-low' ? 'DESC' : 'ASC'}`;
@@ -190,23 +209,32 @@ exports.getAllProducts = (req, res) => {
     }
     baseSql += ` ORDER BY ${orderBy}`;
 
-    // Pagination
-    baseSql += `  LIMIT ? OFFSET ?`;
+    // 7. Pagination
+    baseSql += ` LIMIT ? OFFSET ?`;
+    // We create a separate parameter array for the count query which doesn't need LIMIT/OFFSET
+    const countParams = [...sqlParams]; 
     sqlParams.push(parseInt(limit), offset);
     
-    // Execute both queries
-    db.query(countSql, sqlParams.slice(0, sqlParams.length - 2), (countErr, countResult) => {
+    
+    // 8. Execute Queries
+    
+    // Execute count query first
+    db.query(countSql, countParams, (countErr, countResult) => {
         if (countErr) {
+            console.error('Count Query Error:', countErr);
             return res.status(500).json({ success: false, message: 'Failed to get product count.', error: countErr });
         }
         
         const totalCount = countResult[0].total;
 
+        // Execute main product fetch query
         db.query(baseSql, sqlParams, (err, products) => {
             if (err) {
+                console.error('Products Fetch Query Error:', err);
                 return res.status(500).json({ success: false, message: 'Failed to fetch products.', error: err });
             }
 
+            // Assuming formatProductData is defined elsewhere
             const formattedProducts = products.map(formatProductData);
 
             res.json({
