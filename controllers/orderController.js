@@ -7,6 +7,8 @@ const path = require('path');
 const phonePeClient = require('../helpers/phonepeClient');
 const { StandardCheckoutPayRequest, MetaInfo } = require('pg-sdk-node');
 const util = require('util');
+const { generateCustomerEmailHtml, generateAdminEmailHtml } = require('../helpers/email_templates'); // Import the functions
+require('dotenv').config();
 
 db.getConnectionPromise = util.promisify(db.getConnection).bind(db);
 const promisifyConnectionMethods = (connection) => {
@@ -27,6 +29,7 @@ const getImageUrl = (imageName) => {
     return `https://api.naazaquarium.in/uploads/product_images/${imageName}`;
 };
 
+const ADMIN_EMAIL = process.env.ADMIN_EMAIL
 function queryPromise(sql, params) {
     return new Promise((resolve, reject) => {
         // Assuming 'db' is your database connection object
@@ -447,8 +450,12 @@ exports.createOrder = async (req, res) => {
 
                     // 4. Send the invoice email (Non-critical step)
                     try {
+                        const userEmailBody = generateCustomerEmailHtml(orderInfo, user, address, productsForPdf);
+                        const adminEmailBody = generateAdminEmailHtml(orderInfo, user, address, productsForPdf);
+
                         const emailBody = "Dear customer, thank you for your order. Please find your invoice attached.";
-                        await sendInvoiceEmail(user.email, `Invoice for Order #${merchantOrderId}`, emailBody, invoicePath);
+                        await sendInvoiceEmail(user.email, `Invoice for Order #${merchantOrderId}`, userEmailBody, invoicePath);
+                        await sendInvoiceEmail(ADMIN_EMAIL, `Invoice for Order #${merchantOrderId}`, adminEmailBody, invoicePath);
 
                         // If DB update and Email succeed:
                         
@@ -687,7 +694,7 @@ exports.getOrderById = (req, res) => {
                 ...orderData,
                 products: productResults
             };
-            console.log(productResults)
+            
             // Format and send the response
             const order = formatOrderData(finalOrder); 
             
