@@ -461,18 +461,20 @@ exports.createOrder = async (req, res) => {
                         
                     } catch (emailErr) {
                         // 5. Handle email failure: Log the error, but still return success for the API call.
-                        console.error('Failed to send invoice email:', emailErr);
+                        console.log('Failed to send invoice email:', emailErr);
+                        await connection.commitPromise();
                         // The order is valid and the DB is updated, so we report success to the user.
                         return res.json({ success: true, message: 'Order updated, but the invoice email failed to send.', navigate_to : `/success/${merchantOrderId}` });
                     }
                     
             } catch (criticalError) {
                 // 6. Handle critical errors (PDF generation or Database update failure).
-                console.error('A critical error occurred during order processing:', criticalError);
+                await connection.commitPromise();
+                console.log('A critical error occurred during order processing:', criticalError);
                 return res.status(500).json({ success: false, message: 'Failed to complete order processing due to an internal error.' , navigate_to : `/failed/${merchantOrderId}`});
             } 
-                await connection.commitPromise(); // Use the promisified commit
-        
+                 // Use the promisified commit
+        await connection.commitPromise();
         // 7. Success Response
                 connection.release();
                 return res.json({ success: true, message: 'Order Created and email sent successfully.' , navigate_to : `/success/${merchantOrderId}`});
