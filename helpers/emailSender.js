@@ -13,7 +13,10 @@ const transporter = nodemailer.createTransport({
 
 const sendInvoiceEmail = (toEmail, subject, htmlContent, attachmentPath) => {
     const mailOptions = {
-        from: process.env.EMAIL_USER,
+        from: {
+        name: "Naaz Aquarium", // The name you want to display
+        address: process.env.EMAIL_USER // The actual email address
+    },
         to: toEmail,
         subject: subject,
         html: htmlContent,
