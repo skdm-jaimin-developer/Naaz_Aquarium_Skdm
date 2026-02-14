@@ -34,16 +34,16 @@ const formatProductData = (product) => {
 
     const sizes = product.sizes ? product.sizes.split(';').map(size => {
         const parts = size.split(':');
-        return { 
-            id: parseInt(parts[0]), 
-            name: parts[1], 
-            price: parseFloat(parts[2]), 
-            discount_price: parseFloat(parts[3]), 
-            stock: parseInt(parts[4]), 
-            length: parts[5], 
-            width: parts[6], 
-            height: parts[7], 
-            weight: parts[8] 
+        return {
+            id: parseInt(parts[0]),
+            name: parts[1],
+            price: parseFloat(parts[2]),
+            discount_price: parseFloat(parts[3]),
+            stock: parseInt(parts[4]),
+            length: parts[5],
+            width: parts[6],
+            height: parts[7],
+            weight: parts[8]
         };
     }) : [];
 
@@ -52,45 +52,45 @@ const formatProductData = (product) => {
     // ----------------------------------------------------------------
     const reviews = product.reviews ? product.reviews.split(';;').map(reviewString => { // Split by ';;'
         const parts = reviewString.split(':'); // Split individual review by ':'
-        
+
         // --- Corrected Indices ---
-        const imagePathsString = parts[5]; 
+        const imagePathsString = parts[5];
         console.log('Raw Image Paths String:', imagePathsString); // <--- ADD THIS
         // Process images: Check if we have a string of paths
-        const reviewImages = imagePathsString 
+        const reviewImages = imagePathsString
             ? imagePathsString.split(',').map(imagePath => {
                 // Ensure the path is not just empty or whitespace
-                return imagePath.trim() 
-                    ? { url: getImageUrl(imagePath.trim()) } 
-                    : null; 
+                return imagePath.trim()
+                    ? { url: getImageUrl(imagePath.trim()) }
+                    : null;
             }).filter(img => img !== null) // Remove any empty/null results
             : []; // Default to an empty array
 
-        return { 
-            id: parseInt(parts[0]), 
-            name: parts[1], 
+        return {
+            id: parseInt(parts[0]),
+            name: parts[1],
             review: parts[2],
             rate_stars: parseInt(parts[3]),
             // Correct index for created_at is [4]
-            created_at: parts[4], 
+            created_at: parts[4],
             // Correct index for image paths is [5]
-            images: reviewImages 
+            images: reviewImages
         };
     }) : [];
     // ----------------------------------------------------------------
 
     const coupons = couponsString ? couponsString.split(';').map(coupon => {
         const parts = coupon.split(':');
-        return { 
-            id: parseInt(parts[0]), 
-            code: parts[1], 
-            type: parts[2], 
+        return {
+            id: parseInt(parts[0]),
+            code: parts[1],
+            type: parts[2],
             value: parseFloat(parts[3]),
             description: parts[4],
-            min_purchase: parseFloat(parts[5]), 
-            max_discount: parseFloat(parts[6]), 
-            start_date: parts[7], 
-            end_date: parts[8] 
+            min_purchase: parseFloat(parts[5]),
+            max_discount: parseFloat(parts[6]),
+            start_date: parts[7],
+            end_date: parts[8]
         };
     }) : [];
 
@@ -118,7 +118,7 @@ exports.getAllProducts = (req, res) => {
     const sqlParams = [];
 
     // 2. Define Base SQL Strings
-    
+
     // SQL for fetching the product data with aggregation
     let baseSql = `
         SELECT p.*,
@@ -132,7 +132,7 @@ exports.getAllProducts = (req, res) => {
         LEFT JOIN reviews r ON p.id = r.product_id
         INNER JOIN sizes s ON p.id = s.product_id  -- 💡 Always INNER JOIN sizes for filtering logic
     `;
-    
+
     // Base query used inside a subquery to count the DISTINCT, filtered products
     let countBaseQuery = `
         SELECT p.id
@@ -171,16 +171,16 @@ exports.getAllProducts = (req, res) => {
             sqlParams.push(ids);
         }
     }
-    
+
     // Construct WHERE clause string for both queries
     if (whereClauses.length > 0) {
         const whereClauseString = ` WHERE ` + whereClauses.join(' AND ');
         baseSql += whereClauseString;
         countBaseQuery += whereClauseString;
     }
-    
+
     // 4. Grouping and Stock Filtering (HAVING clause)
-    
+
     // Apply Grouping
     baseSql += ` GROUP BY p.id`;
 
@@ -188,10 +188,10 @@ exports.getAllProducts = (req, res) => {
     baseSql += ` HAVING MIN(s.stock) > 0`;
 
     // 5. Construct Final Count Query
-    
+
     // Apply Grouping and Having to the count base query to select only valid product IDs
-    countBaseQuery += ` GROUP BY p.id HAVING MIN(s.stock) > 0`; 
-    
+    countBaseQuery += ` GROUP BY p.id HAVING MIN(s.stock) > 0`;
+
     // Wrap the result to get the total count of valid product IDs
     const countSql = `SELECT COUNT(*) AS total FROM (${countBaseQuery}) AS subquery_count`;
 
@@ -212,19 +212,19 @@ exports.getAllProducts = (req, res) => {
     // 7. Pagination
     baseSql += ` LIMIT ? OFFSET ?`;
     // We create a separate parameter array for the count query which doesn't need LIMIT/OFFSET
-    const countParams = [...sqlParams]; 
+    const countParams = [...sqlParams];
     sqlParams.push(parseInt(limit), offset);
-    
-    
+
+
     // 8. Execute Queries
-    
+
     // Execute count query first
     db.query(countSql, countParams, (countErr, countResult) => {
         if (countErr) {
             console.error('Count Query Error:', countErr);
             return res.status(500).json({ success: false, message: 'Failed to get product count.', error: countErr });
         }
-        
+
         const totalCount = countResult[0].total;
 
         // Execute main product fetch query
@@ -252,7 +252,7 @@ exports.getAllProducts = (req, res) => {
 };
 
 exports.getAllProductsadmin = (req, res) => {
-    const { page = 1, limit = 10, sort, price_min, price_max, size_min, size_max, category_ids } = req.query;
+    const { page = 1, limit = 10, sort, price_min, price_max, size_min, size_max, category_ids, search } = req.query;
     const offset = (parseInt(page) - 1) * parseInt(limit);
 
     let baseSql = `
@@ -290,7 +290,10 @@ exports.getAllProductsadmin = (req, res) => {
         whereClauses.push(`s.price <= ?`);
         sqlParams.push(parseFloat(price_max));
     }
-
+    if (search) {
+        whereClauses.push(`p.name LIKE ?`);
+        sqlParams.push(`%${search}%`);
+    }
     // Filter by Size Range
     if (size_min) {
         whereClauses.push(`CAST(s.name AS UNSIGNED) >= ?`);
@@ -309,14 +312,14 @@ exports.getAllProductsadmin = (req, res) => {
             sqlParams.push(ids);
         }
     }
-    
+
     // Construct WHERE clause for both queries
     if (whereClauses.length > 0) {
         const whereClauseString = ` WHERE ` + whereClauses.join(' AND ');
         baseSql += whereClauseString;
         countSql += whereClauseString;
     }
-    
+
     // Grouping
     baseSql += ` GROUP BY p.id`;
 
@@ -335,13 +338,13 @@ exports.getAllProductsadmin = (req, res) => {
     // Pagination
     baseSql += `  LIMIT ? OFFSET ?`;
     sqlParams.push(parseInt(limit), offset);
-    
+
     // Execute both queries
     db.query(countSql, sqlParams.slice(0, sqlParams.length - 2), (countErr, countResult) => {
         if (countErr) {
             return res.status(500).json({ success: false, message: 'Failed to get product count.', error: countErr });
         }
-        
+
         const totalCount = countResult[0].total;
 
         db.query(baseSql, sqlParams, (err, products) => {
@@ -411,9 +414,9 @@ exports.getProductBySlug = (req, res) => {
     db.query(sql, [slug], (err, results) => {
         if (err) return res.status(500).json({ success: false, message: 'Failed to fetch product.', error: err });
         if (results.length === 0) return res.status(404).json({ success: false, message: 'Product not found.' });
-        
+
         // You MUST update your formatProductData function to parse the new structure
-        const formattedProduct = formatProductData(results[0]); 
+        const formattedProduct = formatProductData(results[0]);
 
         res.json({ success: true, product: formattedProduct });
     });
@@ -452,11 +455,11 @@ const fetchProductDetails = (productId, res, successMessage, statusCode) => {
                 slug: product.category_slug,
                 description: product.category_description
             },
-            images : product.images ? product.images.split(';').map(img => {
+            images: product.images ? product.images.split(';').map(img => {
                 const parts = img.split(':');
-                return { 
-                    id: parseInt(parts[0]), 
-                    url: getImageUrl(parts[1]) 
+                return {
+                    id: parseInt(parts[0]),
+                    url: getImageUrl(parts[1])
                 };
             }) : [],
             sizes: product.sizes ? product.sizes.split(';').map(size => {
@@ -478,7 +481,7 @@ const fetchProductDetails = (productId, res, successMessage, statusCode) => {
 };
 
 exports.createProduct = (req, res) => {
-    const { name, description, category_id , tax ,shipping  } = req.body;
+    const { name, description, category_id, tax, shipping } = req.body;
     if (!name || !category_id) return res.status(400).json({ success: false, message: 'Product name and category ID are required.' });
 
     const slug = slugify(name);
@@ -486,7 +489,7 @@ exports.createProduct = (req, res) => {
     const placeholders = ['?', '?', '?', '?'];
     const values = [name, description, category_id, slug];
 
-   
+
     if (tax !== undefined && tax !== null) {
         columns.push('tax');
         placeholders.push('?');
@@ -511,9 +514,9 @@ exports.createProduct = (req, res) => {
             }
             return res.status(500).json({ success: false, message: 'Failed to create product.', error: err });
         }
-        
+
         const productId = result.insertId;
-        
+
         const images = req.files.map(file => ({ productId, url: file.filename }));
         if (images.length > 0) {
             const imageSql = 'INSERT INTO images (product_id, url) VALUES ?';
@@ -533,10 +536,10 @@ exports.createProduct = (req, res) => {
 
 exports.updateProduct = (req, res) => {
     const { id } = req.params;
-    const { name, description, category_id ,tax ,shipping } = req.body;
-    
+    const { name, description, category_id, tax, shipping } = req.body;
+
     const slug = name ? slugify(name) : undefined;
-    
+
     let updateFields = {};
     if (name) updateFields.name = name;
     if (description) updateFields.description = description;
@@ -546,7 +549,7 @@ exports.updateProduct = (req, res) => {
     if (shipping) updateFields.shipping = shipping;
 
     const sql = `UPDATE products SET ? WHERE id = ?`;
-    
+
     db.query(sql, [updateFields, id], (err) => {
         if (err) {
             if (err.code === 'ER_DUP_ENTRY') {
@@ -557,7 +560,7 @@ exports.updateProduct = (req, res) => {
             }
             return res.status(500).json({ success: false, message: 'Failed to update product.', error: err });
         }
-        
+
         if (req.files && req.files.length > 0) {
             const images = req.files.map(file => ({ productId: id, url: file.path }));
             const imageSql = 'INSERT INTO images (product_id, url) VALUES ?';
@@ -582,7 +585,7 @@ exports.deleteProduct = (req, res) => {
     const getImagesSql = 'SELECT url FROM images WHERE product_id = ?';
     db.query(getImagesSql, [id], (err, images) => {
         if (err) return res.status(500).json({ success: false, message: 'Failed to get images to delete.', error: err });
-        
+
         images.forEach(image => {
             const imagePath = path.join(__dirname, '..', image.url);
             fs.unlink(imagePath, (unlinkErr) => {
